@@ -15,11 +15,81 @@ function parseCsvParam(value) {
     .filter(Boolean);
 }
 
+function parseBooleanParam(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());
+}
+
+function normalizeSeed(value) {
+  const seed = String(value || "").trim();
+  return seed || "default-seed";
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function shuffleMenus(items, seed) {
+  return [...items].sort((left, right) => {
+    const leftHash = hashString(`${seed}:${left.id}`);
+    const rightHash = hashString(`${seed}:${right.id}`);
+
+    if (leftHash === rightHash) {
+      return left.id.localeCompare(right.id, "zh-CN");
+    }
+
+    return leftHash - rightHash;
+  });
+}
+
+function diversifyByShop(items) {
+  const buckets = new Map();
+
+  items.forEach((item) => {
+    if (!buckets.has(item.shop_text)) {
+      buckets.set(item.shop_text, []);
+    }
+
+    buckets.get(item.shop_text).push(item);
+  });
+
+  const orderedShops = [...buckets.keys()];
+  const diversified = [];
+
+  while (orderedShops.length > 0) {
+    const nextRound = [];
+
+    orderedShops.forEach((shop) => {
+      const bucket = buckets.get(shop);
+      if (!bucket?.length) {
+        return;
+      }
+
+      diversified.push(bucket.shift());
+
+      if (bucket.length > 0) {
+        nextRound.push(shop);
+      }
+    });
+
+    orderedShops.splice(0, orderedShops.length, ...nextRound);
+  }
+
+  return diversified;
+}
+
 function includesIgnoreCase(source, target) {
   return source.toLowerCase().includes(target.toLowerCase());
 }
 
-function sortMenus(items, sortBy) {
+function sortMenus(items, sortBy, options = {}) {
+  const { seed = "default-seed", diversifyShop = false } = options;
   const sorted = [...items];
 
   switch (sortBy) {
@@ -41,11 +111,15 @@ function sortMenus(items, sortBy) {
     case "health_desc":
       sorted.sort((left, right) => right.radar.health - left.radar.health);
       break;
+    case "random":
+      return diversifyShop
+        ? diversifyByShop(shuffleMenus(sorted, seed))
+        : shuffleMenus(sorted, seed);
     default:
       break;
   }
 
-  return sorted;
+  return diversifyShop ? diversifyByShop(sorted) : sorted;
 }
 
 export async function getMeta() {
@@ -66,6 +140,8 @@ export async function listMenus(query) {
     price_min: query.price_min ? Number(query.price_min) : null,
     price_max: query.price_max ? Number(query.price_max) : null,
     sort_by: query.sort_by || "default",
+    seed: normalizeSeed(query.seed),
+    diversify_shop: parseBooleanParam(query.diversify_shop),
     page: Math.max(Number(query.page || 1), 1),
     page_size: Math.min(Math.max(Number(query.page_size || 20), 1), 100),
   };
@@ -135,7 +211,10 @@ export async function listMenus(query) {
     return true;
   });
 
-  filtered = sortMenus(filtered, filters.sort_by);
+  filtered = sortMenus(filtered, filters.sort_by, {
+    seed: filters.seed,
+    diversifyShop: filters.diversify_shop,
+  });
 
   const total = filtered.length;
   const totalPages = Math.max(Math.ceil(total / filters.page_size), 1);
@@ -161,6 +240,8 @@ export async function listMenus(query) {
       price_min: filters.price_min,
       price_max: filters.price_max,
       sort_by: filters.sort_by,
+      seed: filters.seed,
+      diversify_shop: filters.diversify_shop,
     },
   };
 }
