@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server/index.js",
+    "server:dev": "node --watch server/index.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -12,7 +14,10 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "cors": "^2.8.5",
     "date-fns": "^4.1.0",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
     "jotai": "^2.18.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
