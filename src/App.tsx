@@ -313,6 +313,31 @@ function mergeMenus(existing: MenuItem[], incoming: MenuItem[]) {
   return [...merged.values()];
 }
 
+function buildDiscoverRequestUrl({
+  page,
+  keyword,
+  seed,
+}: {
+  page: number;
+  keyword: string;
+  seed: string;
+}) {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(DISCOVER_PAGE_SIZE),
+  });
+
+  if (keyword) {
+    params.set("keyword", keyword);
+  } else {
+    params.set("sort_by", "random");
+    params.set("seed", seed);
+    params.set("diversify_shop", "true");
+  }
+
+  return `/api/menus?${params.toString()}`;
+}
+
 const Sidebar = () => {
   const [currentView, setView] = useAtom(viewAtom);
   const [favorites] = useAtom(favoritesAtom);
@@ -580,6 +605,8 @@ const FoodCard = ({
         <motion.img
           src={getImageUrl(item.image_key)}
           alt={item.title}
+          loading="lazy"
+          decoding="async"
           whileHover={{ scale: 1.05 }}
           transition={{ duration: 0.7, ease: [0.33, 1, 0.68, 1] }}
           className="w-full h-full object-cover"
@@ -1776,6 +1803,12 @@ export default function App() {
   const discoverSeedRef = useRef(generateSessionSeed());
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const requestVersionRef = useRef(0);
+  const prefetchedPageRef = useRef<{
+    page: number;
+    keyword: string;
+    data: MenusResponse["data"];
+  } | null>(null);
+  const prefetchingPageRef = useRef<number | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const isSearchMode = Boolean(deferredSearchQuery);
 
@@ -1828,11 +1861,66 @@ export default function App() {
     setDiscoverPage(1);
     setDiscoverItems([]);
     setHasMoreDiscover(true);
+    prefetchedPageRef.current = null;
+    prefetchingPageRef.current = null;
   }, [deferredSearchQuery]);
 
   useEffect(() => {
     const requestVersion = ++requestVersionRef.current;
     let cancelled = false;
+
+    function applyDiscoverResponse(data: MenusResponse["data"]) {
+      const incomingItems = data.items;
+      setDiscoverItems((previous) =>
+        discoverPage === 1
+          ? incomingItems
+          : mergeMenus(previous, incomingItems),
+      );
+      setMenuCache((previous) => mergeMenus(previous, incomingItems));
+      setDiscoverTotal(data.pagination.total);
+      setCatalogCount((previous) => previous || data.pagination.total);
+      setHasMoreDiscover(data.pagination.page < data.pagination.total_pages);
+      setErrorMessage(null);
+
+      const nextPage = data.pagination.page + 1;
+      const canPrefetch = nextPage <= data.pagination.total_pages;
+      if (
+        canPrefetch &&
+        prefetchingPageRef.current !== nextPage &&
+        !(
+          prefetchedPageRef.current?.page === nextPage &&
+          prefetchedPageRef.current?.keyword === deferredSearchQuery
+        )
+      ) {
+        prefetchingPageRef.current = nextPage;
+        void fetchJson<MenusResponse>(
+          buildDiscoverRequestUrl({
+            page: nextPage,
+            keyword: deferredSearchQuery,
+            seed: discoverSeedRef.current,
+          }),
+        )
+          .then((response) => {
+            if (cancelled || requestVersion !== requestVersionRef.current) {
+              return;
+            }
+
+            prefetchedPageRef.current = {
+              page: nextPage,
+              keyword: deferredSearchQuery,
+              data: response.data,
+            };
+          })
+          .catch(() => {
+            prefetchedPageRef.current = null;
+          })
+          .finally(() => {
+            if (prefetchingPageRef.current === nextPage) {
+              prefetchingPageRef.current = null;
+            }
+          });
+      }
+    }
 
     async function loadDiscoverPage() {
       if (discoverPage === 1) {
@@ -1842,41 +1930,33 @@ export default function App() {
       }
 
       try {
-        const params = new URLSearchParams({
-          page: String(discoverPage),
-          page_size: String(DISCOVER_PAGE_SIZE),
-        });
+        const prefetched = prefetchedPageRef.current;
+        if (
+          prefetched &&
+          prefetched.page === discoverPage &&
+          prefetched.keyword === deferredSearchQuery
+        ) {
+          prefetchedPageRef.current = null;
+          if (cancelled || requestVersion !== requestVersionRef.current) {
+            return;
+          }
 
-        if (deferredSearchQuery) {
-          params.set("keyword", deferredSearchQuery);
-        } else {
-          params.set("sort_by", "random");
-          params.set("seed", discoverSeedRef.current);
-          params.set("diversify_shop", "true");
+          applyDiscoverResponse(prefetched.data);
+          return;
         }
 
         const response = await fetchJson<MenusResponse>(
-          `/api/menus?${params.toString()}`,
+          buildDiscoverRequestUrl({
+            page: discoverPage,
+            keyword: deferredSearchQuery,
+            seed: discoverSeedRef.current,
+          }),
         );
         if (cancelled || requestVersion !== requestVersionRef.current) {
           return;
         }
 
-        const incomingItems = response.data.items;
-        setDiscoverItems((previous) =>
-          discoverPage === 1
-            ? incomingItems
-            : mergeMenus(previous, incomingItems),
-        );
-        setMenuCache((previous) => mergeMenus(previous, incomingItems));
-        setDiscoverTotal(response.data.pagination.total);
-        setCatalogCount(
-          (previous) => previous || response.data.pagination.total,
-        );
-        setHasMoreDiscover(
-          response.data.pagination.page < response.data.pagination.total_pages,
-        );
-        setErrorMessage(null);
+        applyDiscoverResponse(response.data);
       } catch (error) {
         if (!cancelled && requestVersion === requestVersionRef.current) {
           setErrorMessage(
