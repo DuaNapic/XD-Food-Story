@@ -2,25 +2,32 @@ import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { atom, useAtom } from "jotai";
 import {
+  Area,
+  AreaChart,
   PolarAngleAxis,
   PolarGrid,
   PolarRadiusAxis,
   Radar,
   RadarChart,
   ResponsiveContainer,
+  Tooltip,
+  XAxis,
 } from "recharts";
 import {
   ChefHat,
   Clock,
+  Droplets,
+  Flame,
   Heart,
   HeartCrack,
   Home,
+  Leaf,
   LoaderCircle,
   MapPin,
   Search,
   Sparkles,
-  Tags,
   Utensils,
+  Wheat,
   X,
 } from "lucide-react";
 import XiaoD from "./components/XiaoD";
@@ -96,6 +103,26 @@ interface RecommendQueryResponse {
   };
 }
 
+interface MacroEstimate {
+  protein: number;
+  carbs: number;
+  fat: number;
+  calories: number;
+}
+
+interface CrowdPoint {
+  time: string;
+  level: number;
+}
+
+interface ReferenceCard {
+  id: string;
+  title: string;
+  subtitle: string;
+  body: string;
+  accentClassName: string;
+}
+
 const imageMap: Record<string, string> = {
   dumplings:
     "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=1200&q=80",
@@ -113,8 +140,142 @@ const imageMap: Record<string, string> = {
     "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=1200&q=80",
 };
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function getImageUrl(imageKey: string) {
   return imageMap[imageKey] || imageMap.snack;
+}
+
+function normalizeRadarScore(value: number) {
+  if (value <= 5) {
+    return clamp(Math.round(value * 20), 0, 100);
+  }
+  return clamp(Math.round(value), 0, 100);
+}
+
+function averageWaitMinutes(waitTimeText: string) {
+  const numbers = waitTimeText.match(/\d+/g)?.map(Number) || [];
+  if (numbers.length === 0) {
+    return 10;
+  }
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
+function getSatietyLabel(item: MenuItem) {
+  const satietyScore = normalizeRadarScore(item.radar.satiety);
+  if (satietyScore >= 88) {
+    return "十分顶饱";
+  }
+  if (satietyScore >= 76) {
+    return "极强饱腹感";
+  }
+  if (satietyScore >= 60) {
+    return "适中饱腹感";
+  }
+  return "汤水多易消化";
+}
+
+function buildMacroEstimate(item: MenuItem): MacroEstimate {
+  const satiety = normalizeRadarScore(item.radar.satiety);
+  const health = normalizeRadarScore(item.radar.health);
+  const taste = normalizeRadarScore(item.radar.taste);
+  const spicyBoost =
+    item.spiciness === "特辣"
+      ? 10
+      : item.spiciness === "中辣"
+        ? 6
+        : item.spiciness === "微辣"
+          ? 3
+          : 0;
+
+  return {
+    protein: Math.round(12 + health * 0.12 + taste * 0.05 + item.price * 0.8),
+    carbs: Math.round(18 + satiety * 0.35 + item.price * 1.4),
+    fat: Math.round(
+      6 + (100 - health) * 0.08 + taste * 0.05 + spicyBoost * 0.4,
+    ),
+    calories: Math.round(
+      220 + item.price * 13 + satiety * 2 + taste * 0.6 + spicyBoost,
+    ),
+  };
+}
+
+function buildCrowdTrend(item: MenuItem): CrowdPoint[] {
+  const waitBase = clamp(
+    Math.round(averageWaitMinutes(item.wait_time_text) * 4),
+    20,
+    80,
+  );
+  const hash = item.id
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const factors = [0.42, 0.76, 1, 0.84, 0.57, 0.34];
+  const times = ["11:00", "11:30", "12:00", "12:30", "13:00", "13:30"];
+
+  return times.map((time, index) => ({
+    time,
+    level: clamp(
+      Math.round(waitBase * factors[index] + ((hash + index * 11) % 12) - 6),
+      12,
+      100,
+    ),
+  }));
+}
+
+function buildReferenceCards(item: MenuItem): ReferenceCard[] {
+  const mealText = item.meal_time.join(" / ");
+  const flavorText = item.flavor_options.length
+    ? item.flavor_options.join(" / ")
+    : "暂无补充口味";
+
+  return [
+    {
+      id: "meal",
+      title: "就餐时段",
+      subtitle: mealText,
+      body: `当前数据标注为${mealText}，更适合按这个餐段筛选。`,
+      accentClassName: "from-orange-400 to-rose-400",
+    },
+    {
+      id: "window",
+      title: "档口位置",
+      subtitle: `${item.location_text} · ${item.stall_text}`,
+      body: `店铺为${item.shop_text}，适合到对应楼层后直接找窗口。`,
+      accentClassName: "from-blue-400 to-indigo-400",
+    },
+    {
+      id: "flavor",
+      title: "口味标签",
+      subtitle: flavorText,
+      body: `分类属于${item.category}，辣度为${item.spiciness}。`,
+      accentClassName: "from-emerald-400 to-teal-400",
+    },
+    {
+      id: "pricing",
+      title: "规格与计价",
+      subtitle: item.form_label || "暂无规格说明",
+      body: item.price_rule_note || "当前没有额外计价规则说明。",
+      accentClassName: "from-amber-400 to-yellow-500",
+    },
+  ];
+}
+
+function buildWarningText(item: MenuItem) {
+  const parts = [`辣度偏${item.spiciness}`, `高峰等待约${item.wait_time_text}`];
+  if (item.price_rule_note) {
+    parts.push(item.price_rule_note);
+  }
+  return `${parts.join("，")}。`;
+}
+
+function buildPairingText(item: MenuItem) {
+  const flavorText = item.flavor_options.length
+    ? `口味关键词是${item.flavor_options.join("、")}`
+    : "口味标签比较简洁";
+  const formText = item.form_label ? `，${item.form_label}更方便判断份量` : "";
+  return `推荐在${item.meal_time.join(" / ")}时段尝试，${flavorText}${formText}。`;
 }
 
 async function fetchJson<T>(
@@ -159,7 +320,9 @@ const Sidebar = () => {
               className="w-5 h-5 flex-shrink-0"
               strokeWidth={currentView === "discover" ? 2 : 1.5}
             />
-            <span className="ml-3 font-medium hidden lg:block">发现</span>
+            <span className="ml-3 font-medium hidden lg:block">
+              发现 (Discover)
+            </span>
           </button>
           <button
             onClick={() => setView("favorites")}
@@ -185,6 +348,18 @@ const Sidebar = () => {
               )}
             </div>
             <span className="ml-3 font-medium hidden lg:block">我的收藏</span>
+            {favorites.length > 0 && (
+              <span
+                className={cn(
+                  "ml-auto text-xs font-semibold px-2 py-0.5 rounded-full hidden lg:block",
+                  currentView === "favorites"
+                    ? "bg-stone-700 text-stone-200"
+                    : "bg-stone-100 text-stone-500",
+                )}
+              >
+                {favorites.length}
+              </span>
+            )}
           </button>
         </nav>
       </aside>
@@ -221,6 +396,11 @@ const Sidebar = () => {
               )}
               strokeWidth={currentView === "favorites" ? 2 : 1.5}
             />
+            {favorites.length > 0 && (
+              <span className="absolute top-2 right-[calc(50%-14px)] w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-stone-800">
+                {favorites.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -228,7 +408,7 @@ const Sidebar = () => {
   );
 };
 
-const Hero = () => {
+const Hero = ({ menuCount }: { menuCount: number }) => {
   const [searchQuery, setSearchQuery] = useAtom(searchQueryAtom);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -242,22 +422,65 @@ const Hero = () => {
       >
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         <span className="text-sm font-medium text-stone-600 tracking-wide pr-1">
-          Server Mode Enabled
+          {menuCount > 0 ? `${menuCount} Dishes Ready` : "Campus Menu Live"}
         </span>
+        <motion.div
+          animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+          transition={{
+            duration: 4.5,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 0.5,
+          }}
+          className="absolute top-8 -left-6 w-2 h-2 bg-stone-200 rounded-full blur-[1px]"
+        />
+        <motion.div
+          animate={{
+            y: [0, 6, 0],
+            opacity: [0.2, 0.6, 0.2],
+            rotate: [-10, 5, -10],
+          }}
+          transition={{
+            duration: 5.5,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 1.5,
+          }}
+          className="absolute -top-4 -right-8"
+        >
+          <Leaf className="w-5 h-5" strokeWidth={1} />
+        </motion.div>
       </motion.div>
+
       <div className="relative inline-block mb-6">
         <h1 className="text-5xl md:text-6xl font-serif font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-stone-800 to-stone-400 pb-2 relative z-10">
           XD食物语
         </h1>
+        <motion.div
+          initial={{ opacity: 0, rotate: -15, scale: 0.8 }}
+          animate={{ opacity: 1, rotate: [10, -5, 10], scale: 1 }}
+          transition={{
+            opacity: { delay: 0.3, duration: 0.8 },
+            rotate: { duration: 6, repeat: Infinity, ease: "easeInOut" },
+          }}
+          className="absolute -top-6 -right-5 md:-top-7 md:-right-6 text-orange-400/80 drop-shadow-sm z-20"
+        >
+          <ChefHat className="w-8 h-8 md:w-10 md:h-10" strokeWidth={1.5} />
+        </motion.div>
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-[3px] bg-gradient-to-r from-transparent via-stone-200 to-transparent rounded-full" />
       </div>
+
       <motion.p
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.1 }}
         className="text-lg md:text-xl text-stone-500 max-w-xl mx-auto mb-10 font-light leading-relaxed"
       >
-        首页卡片、详情页和 AI 推荐现在都由后端接口驱动，不再依赖本地 mock。
+        发现校园最佳美食，或点击右下角的
+        <span className="text-blue-500 font-medium">西小电</span>让 AI
+        帮你决定今天吃什么 ✨
       </motion.p>
+
       <motion.div
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -274,7 +497,7 @@ const Hero = () => {
             type="text"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="搜索菜名、店名、位置..."
+            placeholder="搜索菜名、食堂..."
             className="flex-1 ml-3 bg-transparent border-none focus:ring-0 text-stone-800 placeholder-stone-400 font-medium outline-none text-[16px]"
           />
           {searchQuery && (
@@ -289,6 +512,15 @@ const Hero = () => {
             </button>
           )}
         </div>
+        {searchQuery && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="absolute -bottom-7 left-0 right-0 text-[13px] text-stone-400 text-center"
+          >
+            按菜名或食堂过滤中...想用 AI 推荐？点右下角的西小电
+          </motion.p>
+        )}
       </motion.div>
     </section>
   );
@@ -303,6 +535,7 @@ const FoodCard = ({
 }) => {
   const [favorites, setFavorites] = useAtom(favoritesAtom);
   const isFavorite = favorites.includes(item.id);
+  const satietyLabel = getSatietyLabel(item);
 
   const toggleFavorite = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -330,7 +563,7 @@ const FoodCard = ({
         />
         <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full text-[13px] font-medium text-stone-700 shadow-sm flex items-center gap-1.5 z-10">
           <Utensils className="w-3.5 h-3.5 text-orange-500" strokeWidth={2} />
-          {item.badge}
+          {satietyLabel}
         </div>
         <button
           onClick={toggleFavorite}
@@ -345,26 +578,21 @@ const FoodCard = ({
           />
         </button>
       </div>
-      <div className="p-5 flex flex-col flex-grow bg-white gap-3">
-        <div className="flex justify-between items-start gap-3">
-          <h3 className="text-[19px] font-semibold text-stone-800 tracking-tight line-clamp-2">
+      <div className="p-5 flex flex-col flex-grow bg-white">
+        <div className="flex justify-between items-start mb-2.5 gap-3">
+          <h3 className="text-[19px] font-semibold text-stone-800 tracking-tight line-clamp-1">
             {item.title}
           </h3>
           <span className="text-lg font-medium text-stone-800 whitespace-nowrap">
             ¥{item.price.toFixed(1)}
           </span>
         </div>
-        <div className="space-y-2 mt-auto">
-          <div className="flex items-center text-[14px] text-stone-500">
-            <MapPin
-              className="w-4 h-4 mr-1.5 flex-shrink-0 text-stone-400"
-              strokeWidth={1.5}
-            />
-            <span className="truncate">{item.location_text}</span>
-          </div>
-          <div className="text-[13px] text-stone-500 line-clamp-1">
-            {item.shop_text} · {item.stall_text}
-          </div>
+        <div className="flex items-center text-[14px] text-stone-500 mt-auto">
+          <MapPin
+            className="w-4 h-4 mr-1.5 flex-shrink-0 text-stone-400"
+            strokeWidth={1.5}
+          />
+          <span className="truncate">{item.location_text}</span>
         </div>
       </div>
     </motion.div>
@@ -375,17 +603,35 @@ const DetailDrawer = ({
   item,
   isOpen,
   onClose,
+  onExpand,
 }: {
   item: MenuItem | null;
   isOpen: boolean;
   onClose: () => void;
+  onExpand: (item: MenuItem) => void;
 }) => {
   const chartData = item
     ? [
-        { subject: "味道", value: item.radar.taste },
-        { subject: "性价比", value: item.radar.value },
-        { subject: "饱腹感", value: item.radar.satiety },
-        { subject: "健康度", value: item.radar.health },
+        {
+          subject: "味道",
+          A: normalizeRadarScore(item.radar.taste),
+          fullMark: 100,
+        },
+        {
+          subject: "性价比",
+          A: normalizeRadarScore(item.radar.value),
+          fullMark: 100,
+        },
+        {
+          subject: "饱腹感",
+          A: normalizeRadarScore(item.radar.satiety),
+          fullMark: 100,
+        },
+        {
+          subject: "健康度",
+          A: normalizeRadarScore(item.radar.health),
+          fullMark: 100,
+        },
       ]
     : [];
 
@@ -414,9 +660,9 @@ const DetailDrawer = ({
               stiffness: 250,
               mass: 0.8,
             }}
-            className="fixed top-0 right-0 h-full w-full sm:w-[520px] bg-[#FDFDFD] shadow-2xl z-50 overflow-y-auto flex flex-col"
+            className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-[#FDFDFD] shadow-2xl z-50 overflow-y-auto flex flex-col"
           >
-            <div className="sticky top-0 z-10 bg-[#FDFDFD]/80 backdrop-blur-xl px-6 py-4 flex justify-between items-center border-b border-stone-100">
+            <div className="sticky top-0 z-10 bg-[#FDFDFD]/80 backdrop-blur-xl px-6 py-4 flex justify-between items-center">
               <button
                 onClick={onClose}
                 className="p-2.5 -ml-2 rounded-full hover:bg-stone-100 transition-colors text-stone-500 hover:text-stone-800 bg-white shadow-sm border border-stone-100"
@@ -424,12 +670,17 @@ const DetailDrawer = ({
                 <X className="w-5 h-5" strokeWidth={1.5} />
               </button>
               <span className="text-sm font-medium text-stone-400 tracking-widest uppercase">
-                Detail
+                Quick Glance
               </span>
               <div className="w-10" />
             </div>
-            <div className="px-6 py-5 flex-grow">
-              <div className="relative h-64 rounded-[28px] overflow-hidden mb-6 shadow-sm">
+            <div className="px-6 py-4 flex-grow">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.4 }}
+                className="relative h-64 rounded-[28px] overflow-hidden mb-6 shadow-sm"
+              >
                 <img
                   src={getImageUrl(item.image_key)}
                   alt={item.title}
@@ -440,8 +691,13 @@ const DetailDrawer = ({
                     ¥{item.price.toFixed(1)}
                   </span>
                 </div>
-              </div>
-              <div className="mb-8">
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15, duration: 0.4 }}
+                className="mb-8"
+              >
                 <h2 className="text-[28px] font-bold text-stone-800 mb-3 tracking-tight font-serif">
                   {item.title}
                 </h2>
@@ -460,16 +716,19 @@ const DetailDrawer = ({
                     />
                     等待 {item.wait_time_text}
                   </div>
-                  <div className="flex items-center px-3 py-1.5 bg-white rounded-xl shadow-sm text-[13.5px] font-medium text-stone-600 border border-stone-100">
-                    <Tags
-                      className="w-4 h-4 mr-1.5 text-stone-400"
-                      strokeWidth={1.5}
-                    />
-                    {item.category}
-                  </div>
                 </div>
-              </div>
-              <div className="h-[220px] w-full -ml-3 mb-4 mix-blend-multiply">
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{
+                  type: "spring",
+                  stiffness: 120,
+                  damping: 20,
+                  delay: 0.2,
+                }}
+                className="h-[220px] w-full -ml-3 mb-4 mix-blend-multiply"
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart
                     cx="50%"
@@ -483,13 +742,13 @@ const DetailDrawer = ({
                       tick={{ fill: "#a8a29e", fontSize: 12 }}
                     />
                     <PolarRadiusAxis
-                      domain={[0, 5]}
+                      domain={[0, 100]}
                       tick={false}
                       axisLine={false}
                     />
                     <Radar
-                      name="指标"
-                      dataKey="value"
+                      name="Metrics"
+                      dataKey="A"
                       stroke="#7dd3fc"
                       strokeWidth={1.5}
                       fill="#bae6fd"
@@ -498,47 +757,478 @@ const DetailDrawer = ({
                     />
                   </RadarChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="space-y-4">
-                <div className="bg-white rounded-[24px] p-5 shadow-sm border border-stone-100">
-                  <h4 className="text-sm font-medium text-stone-400 uppercase tracking-widest mb-2">
-                    AI 推荐理由
-                  </h4>
-                  <p className="text-[15px] leading-relaxed text-stone-700">
-                    {item.ai_insight}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-stone-50 rounded-[24px] p-5 border border-stone-100">
-                    <h4 className="text-sm font-medium text-stone-400 uppercase tracking-widest mb-2">
-                      基础信息
-                    </h4>
-                    <div className="space-y-1 text-sm text-stone-600">
-                      <p>店名：{item.shop_text}</p>
-                      <p>辣度：{item.spiciness}</p>
-                      <p>餐段：{item.meal_time.join(" / ")}</p>
-                    </div>
-                  </div>
-                  <div className="bg-stone-50 rounded-[24px] p-5 border border-stone-100">
-                    <h4 className="text-sm font-medium text-stone-400 uppercase tracking-widest mb-2">
-                      补充说明
-                    </h4>
-                    <div className="space-y-1 text-sm text-stone-600">
-                      <p>
-                        口味：
-                        {item.flavor_options.length
-                          ? item.flavor_options.join(" / ")
-                          : "暂无"}
-                      </p>
-                      <p>规格：{item.form_label || "暂无"}</p>
-                      <p>计价：{item.price_rule_note || "暂无"}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </motion.div>
+              <p className="text-[14px] text-stone-500 text-center px-4 leading-relaxed font-light italic">
+                "{item.ai_insight}"
+              </p>
+            </div>
+            <div className="p-6 bg-gradient-to-t from-[#FDFDFD] via-[#FDFDFD] to-transparent pt-10 sticky bottom-0">
+              <button
+                onClick={() => onExpand(item)}
+                className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 text-white rounded-[20px] py-4 font-medium transition-transform active:scale-95 shadow-xl shadow-stone-800/20"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300" strokeWidth={2} />
+                查看完整数据分析和评价
+              </button>
             </div>
           </motion.div>
         </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+const FullScreenDetail = ({
+  item,
+  isOpen,
+  onClose,
+}: {
+  item: MenuItem | null;
+  isOpen: boolean;
+  onClose: () => void;
+}) => {
+  const [favorites, setFavorites] = useAtom(favoritesAtom);
+  const isFavorite = item ? favorites.includes(item.id) : false;
+
+  if (!item) {
+    return null;
+  }
+
+  const chartData = [
+    {
+      subject: "味道",
+      A: normalizeRadarScore(item.radar.taste),
+      fullMark: 100,
+    },
+    {
+      subject: "性价比",
+      A: normalizeRadarScore(item.radar.value),
+      fullMark: 100,
+    },
+    {
+      subject: "饱腹感",
+      A: normalizeRadarScore(item.radar.satiety),
+      fullMark: 100,
+    },
+    {
+      subject: "健康度",
+      A: normalizeRadarScore(item.radar.health),
+      fullMark: 100,
+    },
+  ];
+  const macroEstimate = buildMacroEstimate(item);
+  const crowdTrend = buildCrowdTrend(item);
+  const referenceCards = buildReferenceCards(item);
+
+  const toggleFavorite = () => {
+    setFavorites(
+      isFavorite
+        ? favorites.filter((id) => id !== item.id)
+        : [...favorites, item.id],
+    );
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ y: "100%", opacity: 0.5 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{
+            y: "100%",
+            opacity: 0,
+            transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] },
+          }}
+          transition={{
+            type: "spring",
+            damping: 30,
+            stiffness: 250,
+            mass: 0.8,
+          }}
+          className="fixed inset-0 bg-[#FDFDFD] z-[60] overflow-y-auto overflow-x-hidden pb-32"
+        >
+          <div className="sticky top-0 z-20 w-full px-6 py-4 flex justify-between items-center bg-gradient-to-b from-[#FDFDFD]/90 to-transparent backdrop-blur-[2px]">
+            <button
+              onClick={onClose}
+              className="p-3 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 hover:bg-stone-50 transition-colors text-stone-600 focus:outline-none"
+            >
+              <X className="w-6 h-6" strokeWidth={1.5} />
+            </button>
+            <button
+              onClick={toggleFavorite}
+              className="p-3 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 hover:bg-rose-50 transition-all text-stone-600 hover:scale-105 active:scale-95 focus:outline-none"
+            >
+              <Heart
+                className={cn(
+                  "w-6 h-6 transition-colors duration-300",
+                  isFavorite
+                    ? "text-rose-500 fill-rose-500 scale-110"
+                    : "hover:text-rose-500",
+                )}
+                strokeWidth={isFavorite ? 2 : 1.5}
+              />
+            </button>
+          </div>
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-20">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.15, duration: 0.6, ease: "easeOut" }}
+              className="relative h-[400px] rounded-[40px] overflow-hidden shadow-2xl shadow-stone-200/50 mb-10 mt-6"
+            >
+              <img
+                src={getImageUrl(item.image_key)}
+                alt={item.title}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 via-stone-900/10 to-transparent" />
+              <div className="absolute bottom-8 left-8 right-8">
+                <div className="flex justify-between items-end gap-6">
+                  <div>
+                    <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3 tracking-tight font-serif">
+                      {item.title}
+                    </h1>
+                    <div className="flex flex-wrap gap-2.5">
+                      <div className="flex items-center px-4 py-2 bg-white/20 backdrop-blur-md rounded-2xl text-sm font-medium text-white border border-white/10">
+                        <MapPin
+                          className="w-4 h-4 mr-2 opacity-80"
+                          strokeWidth={1.5}
+                        />
+                        {item.location_text} · {item.stall_text}
+                      </div>
+                      <div className="flex items-center px-4 py-2 bg-white/20 backdrop-blur-md rounded-2xl text-sm font-medium text-white border border-white/10">
+                        <Clock
+                          className="w-4 h-4 mr-2 opacity-80"
+                          strokeWidth={1.5}
+                        />
+                        高峰 {item.wait_time_text}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-white/90 backdrop-blur-md px-6 py-3 rounded-3xl shadow-lg">
+                    <span className="text-3xl font-bold text-stone-800">
+                      ¥{item.price.toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+              <div className="lg:col-span-7 space-y-10">
+                <motion.section
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25, duration: 0.5 }}
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="bg-amber-100 p-2.5 rounded-2xl">
+                      <Sparkles
+                        className="w-5 h-5 text-amber-600"
+                        strokeWidth={2}
+                      />
+                    </div>
+                    <h3 className="text-2xl font-bold text-stone-800 tracking-tight">
+                      AI 美食档案
+                    </h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-[28px] p-6 shadow-sm border border-stone-100 hover:shadow-md transition-shadow">
+                      <h4 className="text-sm font-medium text-stone-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                        <Flame className="w-4 h-4" />
+                        AI 推荐理由
+                      </h4>
+                      <p className="text-[15.5px] leading-relaxed text-stone-700">
+                        {item.ai_insight}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-rose-50/50 rounded-[28px] p-6 border border-rose-100">
+                        <h4 className="text-sm font-medium text-rose-400 uppercase tracking-widest mb-2">
+                          点单提醒
+                        </h4>
+                        <p className="text-[14px] leading-relaxed text-stone-600">
+                          {buildWarningText(item)}
+                        </p>
+                      </div>
+                      <div className="bg-emerald-50/50 rounded-[28px] p-6 border border-emerald-100">
+                        <h4 className="text-sm font-medium text-emerald-500 uppercase tracking-widest mb-2">
+                          推荐场景
+                        </h4>
+                        <p className="text-[14px] leading-relaxed text-stone-600">
+                          {buildPairingText(item)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </motion.section>
+                <hr className="border-stone-100" />
+                <motion.section
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.35, duration: 0.5 }}
+                >
+                  <div className="flex justify-between items-end mb-6">
+                    <div>
+                      <h3 className="text-2xl font-bold text-stone-800 tracking-tight mb-1">
+                        点餐参考
+                      </h3>
+                      <p className="text-sm text-stone-500">
+                        基于真实菜单字段整理出的速览卡片
+                      </p>
+                    </div>
+                    <button className="text-[14px] font-medium text-stone-800 hover:text-stone-500 transition-colors">
+                      实时接口数据
+                    </button>
+                  </div>
+                  <div className="flex overflow-x-auto pb-8 -mx-4 px-4 sm:-mx-8 sm:px-8 snap-x snap-mandatory hide-scrollbar gap-5">
+                    {referenceCards.map((card) => (
+                      <div
+                        key={card.id}
+                        className="min-w-[280px] sm:min-w-[320px] bg-white rounded-[32px] p-6 shadow-xl shadow-stone-200/30 snap-center border border-stone-50"
+                      >
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex gap-3 items-center">
+                            <div
+                              className={cn(
+                                "w-10 h-10 rounded-full bg-gradient-to-tr",
+                                card.accentClassName,
+                              )}
+                            />
+                            <div>
+                              <div className="font-semibold text-[15px] text-stone-800">
+                                {card.title}
+                              </div>
+                              <div className="text-xs text-stone-400">
+                                {card.subtitle}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="bg-stone-50 px-3 py-1 rounded-full text-xs font-medium text-stone-600 border border-stone-100">
+                            Live
+                          </div>
+                        </div>
+                        <p className="text-[15px] text-stone-600 leading-relaxed font-light">
+                          {card.body}
+                        </p>
+                      </div>
+                    ))}
+                    <div className="min-w-[280px] sm:min-w-[320px] bg-stone-50/50 rounded-[32px] p-6 snap-center border-2 border-dashed border-stone-200 flex flex-col items-center justify-center">
+                      <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3">
+                        <Leaf className="w-5 h-5 text-stone-400" />
+                      </div>
+                      <span className="font-medium text-stone-500">
+                        继续从首页或 AI 面板里挑下一道
+                      </span>
+                    </div>
+                  </div>
+                </motion.section>
+              </div>
+              <div className="lg:col-span-5 space-y-6">
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3, duration: 0.5 }}
+                  className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
+                >
+                  <h4 className="font-bold text-[18px] text-stone-800 mb-6">
+                    多维评测
+                  </h4>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 120,
+                      damping: 20,
+                      delay: 0.5,
+                    }}
+                    className="h-[240px] w-full -ml-3"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart
+                        cx="50%"
+                        cy="50%"
+                        outerRadius="65%"
+                        data={chartData}
+                      >
+                        <PolarGrid stroke="#f5f5f4" strokeWidth={1.5} />
+                        <PolarAngleAxis
+                          dataKey="subject"
+                          tick={{
+                            fill: "#78716c",
+                            fontSize: 13,
+                            fontWeight: 500,
+                          }}
+                        />
+                        <PolarRadiusAxis
+                          angle={30}
+                          domain={[0, 100]}
+                          tick={false}
+                          axisLine={false}
+                        />
+                        <Radar
+                          name="Metrics"
+                          dataKey="A"
+                          stroke="#7dd3fc"
+                          strokeWidth={2}
+                          fill="#bae6fd"
+                          fillOpacity={0.4}
+                          isAnimationActive
+                          animationBegin={600}
+                          animationDuration={1500}
+                          animationEasing="ease-out"
+                        />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </motion.div>
+                </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4, duration: 0.5 }}
+                  className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
+                >
+                  <div className="flex justify-between items-end mb-6">
+                    <h4 className="font-bold text-[18px] text-stone-800">
+                      减脂与宏量预估
+                    </h4>
+                    <div className="text-right">
+                      <span className="text-2xl font-black text-stone-800">
+                        {macroEstimate.calories}
+                      </span>
+                      <span className="text-sm font-medium text-stone-400 ml-1">
+                        kcal
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    {[
+                      {
+                        label: "蛋白质 (Protein)",
+                        value: macroEstimate.protein,
+                        max: 55,
+                        color: "bg-blue-400",
+                        icon: (
+                          <Droplets className="w-3.5 h-3.5 text-blue-400" />
+                        ),
+                      },
+                      {
+                        label: "碳水化合物 (Carbs)",
+                        value: macroEstimate.carbs,
+                        max: 110,
+                        color: "bg-amber-400",
+                        icon: <Wheat className="w-3.5 h-3.5 text-amber-400" />,
+                      },
+                      {
+                        label: "脂肪 (Fat)",
+                        value: macroEstimate.fat,
+                        max: 45,
+                        color: "bg-rose-400",
+                        icon: (
+                          <Droplets className="w-3.5 h-3.5 text-rose-400" />
+                        ),
+                      },
+                    ].map((macro, index) => (
+                      <div key={macro.label}>
+                        <div className="flex justify-between text-[13px] font-medium mb-1.5">
+                          <span className="text-stone-500 flex items-center gap-1.5">
+                            {macro.icon}
+                            {macro.label}
+                          </span>
+                          <span className="text-stone-800">{macro.value}g</span>
+                        </div>
+                        <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{
+                              width: `${clamp((macro.value / macro.max) * 100, 0, 100)}%`,
+                            }}
+                            transition={{
+                              delay: 0.8 + index * 0.1,
+                              duration: 1,
+                              type: "spring",
+                            }}
+                            className={cn("h-full rounded-full", macro.color)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.5, duration: 0.5 }}
+                  className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
+                >
+                  <h4 className="font-bold text-[18px] text-stone-800 mb-6">
+                    窗口人流预测
+                  </h4>
+                  <div className="h-[100px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={crowdTrend}
+                        margin={{ top: 5, right: 0, left: -20, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient
+                            id="colorCrowd"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#d1d5db"
+                              stopOpacity={0.8}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#d1d5db"
+                              stopOpacity={0}
+                            />
+                          </linearGradient>
+                        </defs>
+                        <XAxis
+                          dataKey="time"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#9ca3af", fontSize: 11 }}
+                          dy={10}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "16px",
+                            border: "none",
+                            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                            fontSize: "12px",
+                          }}
+                          formatter={(value) => [
+                            `${String(value ?? 0)}% 拥挤`,
+                            "排队指数",
+                          ]}
+                          labelStyle={{ color: "#6b7280", marginBottom: "4px" }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="level"
+                          stroke="#9ca3af"
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#colorCrowd)"
+                          isAnimationActive
+                          animationBegin={800}
+                          animationDuration={1500}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </motion.div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );
@@ -670,13 +1360,18 @@ const XiaoDFloatingChat = ({
 
   async function sendMessage() {
     const query = aiInput.trim();
-    if (!query) {
+    if (!query || isThinking) {
       return;
     }
 
     setAiInput("");
+    setRecommendations([]);
     setMessages((previous) => [...previous, { role: "user", text: query }]);
     setIsThinking(true);
+    setTimeout(
+      () => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }),
+      120,
+    );
 
     try {
       const response = await fetchJson<RecommendQueryResponse>(
@@ -717,7 +1412,7 @@ const XiaoDFloatingChat = ({
 
   useEffect(() => {
     if (isAiOpen) {
-      setTimeout(() => inputRef.current?.focus(), 500);
+      setTimeout(() => inputRef.current?.focus(), 600);
     }
   }, [isAiOpen]);
 
@@ -735,11 +1430,27 @@ const XiaoDFloatingChat = ({
             transition={{ type: "spring", stiffness: 350, damping: 22 }}
             onClick={() => setIsAiOpen(true)}
             className="fixed bottom-24 md:bottom-8 right-5 md:right-8 z-50 w-[68px] h-[68px] rounded-full bg-white shadow-2xl shadow-blue-300/50 border-2 border-blue-100 flex items-center justify-center"
+            title="和西小电聊聊"
           >
             <XiaoDIcon size={52} />
+            <motion.div
+              animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+              transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut" }}
+              className="absolute inset-0 rounded-full bg-blue-400/20"
+            />
+            <motion.div
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 1.5 }}
+              className="absolute -top-1 -left-16 bg-stone-800 text-white text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-lg whitespace-nowrap"
+            >
+              问我吃什么 ✨
+              <span className="absolute -right-1 top-1/2 -translate-y-1/2 border-4 border-transparent border-l-stone-800" />
+            </motion.div>
           </motion.button>
         )}
       </AnimatePresence>
+
       <AnimatePresence>
         {isAiOpen && (
           <>
@@ -757,6 +1468,7 @@ const XiaoDFloatingChat = ({
                 backdropFilter: "blur(8px)",
               }}
             />
+
             <motion.div
               key="panel"
               initial={{
@@ -786,7 +1498,7 @@ const XiaoDFloatingChat = ({
                 damping: 26,
                 mass: 0.9,
               }}
-              className="fixed inset-x-3 bottom-3 md:right-6 md:left-auto md:w-[420px] z-50 overflow-hidden flex flex-col"
+              className="fixed inset-x-3 bottom-3 md:right-6 md:left-auto md:w-[400px] z-50 overflow-hidden flex flex-col"
               style={{
                 top: "max(env(safe-area-inset-top, 12px), 12px)",
                 maxHeight: "calc(100vh - 24px)",
@@ -796,13 +1508,18 @@ const XiaoDFloatingChat = ({
                   "0 32px 80px rgba(0,30,80,0.6), 0 0 0 1px rgba(80,160,255,0.15) inset",
               }}
             >
-              <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25 }}
+                className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0"
+              >
                 <div>
                   <p className="text-white font-bold text-[16px] tracking-wide">
                     西小电
                   </p>
                   <p className="text-blue-300/80 text-[12px]">
-                    后端推荐接口已接入
+                    西电美食 AI 助手
                   </p>
                 </div>
                 <button
@@ -811,38 +1528,90 @@ const XiaoDFloatingChat = ({
                 >
                   <X className="w-4 h-4 text-white/70" strokeWidth={2} />
                 </button>
-              </div>
-              <div className="relative shrink-0" style={{ height: "220px" }}>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.7, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{
+                  type: "spring",
+                  stiffness: 180,
+                  damping: 22,
+                  delay: 0.18,
+                }}
+                className="relative shrink-0"
+                style={{ height: "220px" }}
+              >
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-12 rounded-full bg-blue-500/20 blur-2xl" />
+                <div
+                  className="absolute inset-0 opacity-10"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(rgba(100,180,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(100,180,255,0.3) 1px, transparent 1px)",
+                    backgroundSize: "28px 28px",
+                  }}
+                />
                 <div className="absolute inset-0 w-full h-full flex items-center justify-center">
                   <XiaoD mode={robotMode} />
                 </div>
-              </div>
-              <div
+
+                <motion.div
+                  key={robotMode}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white/8 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10"
+                >
+                  <motion.div
+                    animate={{ opacity: [1, 0.3, 1] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                    className="w-1.5 h-1.5 rounded-full bg-blue-400"
+                  />
+                  <span className="text-blue-200 text-[12px] font-medium">
+                    {robotMode === "idle"
+                      ? "等待中"
+                      : robotMode === "thinking"
+                        ? "思考中..."
+                        : robotMode === "talking"
+                          ? "回复中..."
+                          : "已准备好"}
+                  </span>
+                </motion.div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.35 }}
                 className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0"
                 style={{ scrollbarWidth: "none" }}
               >
                 {messages.length === 0 ? (
-                  <div className="text-center py-4">
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.45 }}
+                    className="text-center py-4"
+                  >
                     <p className="text-blue-200/70 text-[14px] mb-4">
-                      直接说你想吃什么，前端会通过后端推荐接口拿结果。
+                      嗨！告诉我你现在想吃什么 👋
                     </p>
                     <div className="flex flex-wrap gap-2 justify-center">
-                      {[
-                        "来点辣的，别太贵",
-                        "我早上赶课，想快一点",
-                        "想吃清淡点，在海棠一楼",
-                      ].map((sample) => (
-                        <button
-                          key={sample}
-                          onClick={() => setAiInput(sample)}
-                          className="bg-white/10 hover:bg-white/18 text-blue-100 text-[13px] font-medium px-3.5 py-1.5 rounded-full transition-colors border border-white/15 backdrop-blur-sm"
-                        >
-                          {sample}
-                        </button>
-                      ))}
+                      {["🌶️ 来点辣的", "💰 实惠的", "🥗 清淡健康"].map(
+                        (sample) => (
+                          <button
+                            key={sample}
+                            onClick={() => {
+                              setAiInput(sample.slice(3));
+                              inputRef.current?.focus();
+                            }}
+                            className="bg-white/10 hover:bg-white/18 text-blue-100 text-[13px] font-medium px-3.5 py-1.5 rounded-full transition-colors border border-white/15 backdrop-blur-sm"
+                          >
+                            {sample}
+                          </button>
+                        ),
+                      )}
                     </div>
-                  </div>
+                  </motion.div>
                 ) : (
                   messages.map((message, index) => (
                     <motion.div
@@ -913,8 +1682,19 @@ const XiaoDFloatingChat = ({
                   </div>
                 )}
                 <div ref={chatEndRef} />
-              </div>
-              <div className="px-4 pb-5 pt-2 shrink-0">
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  delay: 0.4,
+                  type: "spring",
+                  stiffness: 260,
+                  damping: 24,
+                }}
+                className="px-4 pb-5 pt-2 shrink-0"
+              >
                 <div className="flex gap-2 bg-white/10 backdrop-blur-md rounded-2xl p-1.5 border border-white/15">
                   <input
                     ref={inputRef}
@@ -942,7 +1722,7 @@ const XiaoDFloatingChat = ({
                     发送
                   </button>
                 </div>
-              </div>
+              </motion.div>
             </motion.div>
           </>
         )}
@@ -954,6 +1734,7 @@ const XiaoDFloatingChat = ({
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const [expandedItem, setExpandedItem] = useState<MenuItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -964,12 +1745,21 @@ export default function App() {
 
   useEffect(() => {
     const saved = window.localStorage.getItem("xd-food-favorites");
-    if (saved) {
-      try {
-        setFavorites(JSON.parse(saved));
-      } catch {
+    if (!saved) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        setFavorites(
+          parsed.filter((value): value is string => typeof value === "string"),
+        );
+      } else {
         window.localStorage.removeItem("xd-food-favorites");
       }
+    } catch {
+      window.localStorage.removeItem("xd-food-favorites");
     }
   }, [setFavorites]);
 
@@ -1004,42 +1794,45 @@ export default function App() {
     }
 
     void loadMenus();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const favoriteItems = menus.filter((item) => favorites.includes(item.id));
-  const discoverItems = menus.filter((item) => {
-    if (!searchQuery.trim()) {
-      return true;
-    }
-    const keyword = searchQuery.toLowerCase();
-    return [
-      item.title,
-      item.shop_text,
-      item.location_text,
-      item.category,
-      ...item.flavor_options,
-    ].some((field) => field.toLowerCase().includes(keyword));
-  });
-
-  const displayedItems =
-    currentView === "discover" ? discoverItems : favoriteItems;
-
   async function openDetail(id: string) {
     try {
       const response = await fetchJson<MenuDetailResponse>(`/api/menus/${id}`);
+      setExpandedItem(null);
       setSelectedItem(response.data.item);
+      setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "加载详情失败");
     }
+  }
+
+  const favoriteItems = menus.filter((item) => favorites.includes(item.id));
+
+  let displayedData = currentView === "discover" ? menus : favoriteItems;
+
+  if (searchQuery.trim() && !isAiMode && currentView === "discover") {
+    const keyword = searchQuery.toLowerCase();
+    displayedData = displayedData.filter((item) =>
+      [
+        item.title,
+        item.shop_text,
+        item.location_text,
+        item.category,
+        ...item.flavor_options,
+      ].some((field) => field.toLowerCase().includes(keyword)),
+    );
   }
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] text-stone-800 selection:bg-stone-200 flex relative overflow-hidden">
       <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-sky-200/20 rounded-full blur-[100px] pointer-events-none translate-x-1/3 -translate-y-1/3 z-0" />
       <div className="absolute top-1/2 left-0 w-[600px] h-[600px] bg-orange-200/20 rounded-full blur-[100px] pointer-events-none -translate-x-1/3 -translate-y-1/4 z-0" />
+
       <Sidebar />
       <main className="flex-1 lg:ml-64 md:ml-20 pb-32 transition-all duration-300 relative z-10">
         <AnimatePresence mode="wait">
@@ -1051,7 +1844,7 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
             >
-              <Hero />
+              <Hero menuCount={menus.length} />
               <motion.section
                 className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10"
                 animate={{
@@ -1063,32 +1856,40 @@ export default function App() {
                 transition={{ type: "spring", stiffness: 150, damping: 25 }}
                 style={{ pointerEvents: isAiMode ? "none" : "auto" }}
               >
-                <div className="flex items-center justify-between mb-8">
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3, duration: 0.6, ease: "easeOut" }}
+                  className="flex items-center justify-between mb-8"
+                >
                   <h2 className="text-[22px] font-semibold tracking-tight text-stone-800">
-                    {searchQuery.trim()
-                      ? `搜索 “${searchQuery}” 的结果`
+                    {searchQuery.trim() && !isAiMode
+                      ? `搜索 "${searchQuery}" 的结果`
                       : "Today's Picks"}
                   </h2>
-                  <div className="text-[15px] text-stone-500">
-                    接口数据共 {menus.length} 条
+                  <div className="text-[15px] text-stone-500 flex gap-5 items-center">
+                    <button className="text-stone-800 font-medium tracking-wide">
+                      Newest
+                    </button>
+                    <span className="tracking-wide">共 {menus.length} 条</span>
                   </div>
-                </div>
+                </motion.div>
                 {errorMessage ? (
                   <EmptyState text={errorMessage} />
                 ) : isLoading ? (
                   <LoadingState />
-                ) : displayedItems.length === 0 ? (
+                ) : displayedData.length === 0 ? (
                   <EmptyState text="未找到匹配的美食，换个关键词试试？" />
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">
-                    {displayedItems.map((item, index) => (
+                    {displayedData.map((item, index) => (
                       <motion.div
                         key={item.id}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{
                           duration: 0.5,
-                          delay: index * 0.03,
+                          delay: index * 0.05,
                           ease: "easeOut",
                         }}
                       >
@@ -1118,6 +1919,9 @@ export default function App() {
                     {favorites.length}
                   </span>
                 </h1>
+                <p className="text-stone-500 mt-3 text-lg">
+                  Your curated collection of campus flavors.
+                </p>
               </div>
               {favoriteItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-32 text-center bg-stone-50/50 rounded-[40px] border border-stone-100 border-dashed">
@@ -1128,20 +1932,28 @@ export default function App() {
                     />
                   </div>
                   <h3 className="text-xl font-semibold text-stone-800 mb-2">
-                    收藏夹还是空的
+                    好像什么都没有
                   </h3>
                   <p className="text-stone-500 max-w-sm">
-                    去发现页面逛逛吧，点个红心就会保存在这里。
+                    去发现页面逛逛吧，遇到想吃的美食点个红心就会出现在这里。
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">
                   {favoriteItems.map((item) => (
-                    <FoodCard
+                    <motion.div
                       key={item.id}
-                      item={item}
-                      onClick={() => void openDetail(item.id)}
-                    />
+                      layout
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      transition={{ duration: 0.3, type: "spring" }}
+                    >
+                      <FoodCard
+                        item={item}
+                        onClick={() => void openDetail(item.id)}
+                      />
+                    </motion.div>
                   ))}
                 </div>
               )}
@@ -1149,14 +1961,24 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
       <DetailDrawer
         item={selectedItem}
-        isOpen={!!selectedItem}
+        isOpen={!!selectedItem && !expandedItem}
         onClose={() => setSelectedItem(null)}
+        onExpand={(item) => {
+          setSelectedItem(null);
+          setExpandedItem(item);
+        }}
+      />
+      <FullScreenDetail
+        item={expandedItem}
+        isOpen={!!expandedItem}
+        onClose={() => setExpandedItem(null)}
       />
       <XiaoDFloatingChat
         menus={menus}
-        onPickItem={(item) => setSelectedItem(item)}
+        onPickItem={(item) => void openDetail(item.id)}
       />
     </div>
   );

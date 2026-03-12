@@ -7,6 +7,32 @@ import {
   LLM_TIMEOUT_MS,
 } from "../config.js";
 
+function safeSnippet(text, maxLength = 240) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+async function readJsonSafely(response) {
+  const rawText = await response.text();
+
+  if (!rawText.trim()) {
+    return { rawText, json: null };
+  }
+
+  try {
+    return {
+      rawText,
+      json: JSON.parse(rawText),
+    };
+  } catch (error) {
+    throw new Error(
+      `LLM returned invalid JSON body: ${error.message}. body=${safeSnippet(rawText)}`,
+    );
+  }
+}
+
 function extractJsonBlock(text) {
   const fencedMatch = text.match(/```json\s*([\s\S]*?)```/i);
   if (fencedMatch) {
@@ -63,10 +89,17 @@ export async function requestJsonFromLlm({
       signal: controller.signal,
     });
 
-    const payload = await response.json();
+    const { json: payload, rawText } = await readJsonSafely(response);
 
     if (!response.ok) {
-      throw new Error(payload?.error?.message || "LLM request failed.");
+      throw new Error(
+        payload?.error?.message ||
+          `LLM request failed with status ${response.status}. body=${safeSnippet(rawText)}`,
+      );
+    }
+
+    if (!payload) {
+      throw new Error("LLM returned an empty response body.");
     }
 
     const content = payload?.choices?.[0]?.message?.content;
@@ -75,6 +108,12 @@ export async function requestJsonFromLlm({
     }
 
     return JSON.parse(extractJsonBlock(content));
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`LLM request timed out after ${LLM_TIMEOUT_MS}ms.`);
+    }
+
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }

@@ -33,6 +33,8 @@ export function createApp() {
   });
 
   app.use((error, _req, res, _next) => {
+    console.error("[api-error]", error?.stack || error?.message || error);
+
     if (error instanceof SyntaxError) {
       return fail(res, "BAD_REQUEST", "Invalid JSON body.", 400);
     }
