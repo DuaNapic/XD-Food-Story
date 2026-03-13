@@ -1,5 +1,5 @@
 import React, { useDeferredValue, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { atom, useAtom } from "jotai";
 import {
   Area,
@@ -803,7 +803,7 @@ const DetailDrawer = ({
                       strokeWidth={1.5}
                       fill="#bae6fd"
                       fillOpacity={0.4}
-                      isAnimationActive
+                      isAnimationActive={false}
                     />
                   </RadarChart>
                 </ResponsiveContainer>
@@ -1123,10 +1123,7 @@ const FullScreenDetail = ({
                           strokeWidth={2}
                           fill="#bae6fd"
                           fillOpacity={0.4}
-                          isAnimationActive
-                          animationBegin={600}
-                          animationDuration={1500}
-                          animationEasing="ease-out"
+                          isAnimationActive={false}
                         />
                       </RadarChart>
                     </ResponsiveContainer>
@@ -1267,9 +1264,7 @@ const FullScreenDetail = ({
                           strokeWidth={2}
                           fillOpacity={1}
                           fill="url(#colorCrowd)"
-                          isAnimationActive
-                          animationBegin={800}
-                          animationDuration={1500}
+                          isAnimationActive={false}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -2094,14 +2089,24 @@ export default function App() {
   }, [currentView, hasMoreDiscover, isLoading, isLoadingMore]);
 
   async function openDetail(id: string) {
+    const cachedItem = menuCache.find((item) => item.id === id) || null;
+
+    setExpandedItem(null);
+    if (cachedItem) {
+      setSelectedItem(cachedItem);
+    }
+
     try {
       const response = await fetchJson<MenuDetailResponse>(`/api/menus/${id}`);
-      setExpandedItem(null);
       setSelectedItem(response.data.item);
       setMenuCache((previous) => mergeMenus(previous, [response.data.item]));
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "加载详情失败");
+      if (!cachedItem) {
+        setErrorMessage(
+          error instanceof Error ? error.message : "加载详情失败",
+        );
+      }
     }
   }
 
@@ -2112,71 +2117,149 @@ export default function App() {
     : `已展示 ${discoverItems.length} / ${discoverTotal || catalogCount} 条`;
 
   return (
-    <div className="min-h-screen bg-[#FDFDFD] text-stone-800 selection:bg-stone-200 flex relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-sky-200/20 rounded-full blur-[100px] pointer-events-none translate-x-1/3 -translate-y-1/3 z-0" />
-      <div className="absolute top-1/2 left-0 w-[600px] h-[600px] bg-orange-200/20 rounded-full blur-[100px] pointer-events-none -translate-x-1/3 -translate-y-1/4 z-0" />
+    <MotionConfig reducedMotion="always">
+      <div className="min-h-screen bg-[#FDFDFD] text-stone-800 selection:bg-stone-200 flex relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-sky-200/20 rounded-full blur-[100px] pointer-events-none translate-x-1/3 -translate-y-1/3 z-0" />
+        <div className="absolute top-1/2 left-0 w-[600px] h-[600px] bg-orange-200/20 rounded-full blur-[100px] pointer-events-none -translate-x-1/3 -translate-y-1/4 z-0" />
 
-      <Sidebar />
-      <main className="flex-1 lg:ml-64 md:ml-20 pb-32 transition-all duration-300 relative z-10">
-        <AnimatePresence mode="wait">
-          {currentView === "discover" ? (
-            <motion.div
-              key="discover"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Hero menuCount={catalogCount} />
-              <motion.section
-                className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10"
-                animate={{
-                  y: isAiMode ? 200 : 0,
-                  opacity: isAiMode ? 0.3 : 1,
-                  filter: isAiMode ? "blur(4px)" : "blur(0px)",
-                  scale: isAiMode ? 0.98 : 1,
-                }}
-                transition={{ type: "spring", stiffness: 150, damping: 25 }}
-                style={{ pointerEvents: isAiMode ? "none" : "auto" }}
+        <Sidebar />
+        <main className="flex-1 lg:ml-64 md:ml-20 pb-32 transition-all duration-300 relative z-10">
+          <AnimatePresence mode="wait">
+            {currentView === "discover" ? (
+              <motion.div
+                key="discover"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
               >
-                <motion.div
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3, duration: 0.6, ease: "easeOut" }}
-                  className="flex items-center justify-between mb-8"
+                <Hero menuCount={catalogCount} />
+                <motion.section
+                  className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10"
+                  animate={{
+                    y: isAiMode ? 200 : 0,
+                    opacity: isAiMode ? 0.3 : 1,
+                    filter: isAiMode ? "blur(4px)" : "blur(0px)",
+                    scale: isAiMode ? 0.98 : 1,
+                  }}
+                  transition={{ type: "spring", stiffness: 150, damping: 25 }}
+                  style={{ pointerEvents: isAiMode ? "none" : "auto" }}
                 >
-                  <h2 className="text-[22px] font-semibold tracking-tight text-stone-800">
-                    {isSearchMode
-                      ? `搜索 "${searchQuery.trim()}" 的结果`
-                      : "Today's Picks"}
-                  </h2>
-                  <div className="text-[15px] text-stone-500 flex gap-5 items-center">
-                    <span className="text-stone-800 font-medium tracking-wide">
+                  <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3, duration: 0.6, ease: "easeOut" }}
+                    className="flex items-center justify-between mb-8"
+                  >
+                    <h2 className="text-[22px] font-semibold tracking-tight text-stone-800">
                       {isSearchMode
-                        ? "后端筛选结果"
-                        : "随机推荐 · 分散同店内容"}
+                        ? `搜索 "${searchQuery.trim()}" 的结果`
+                        : "Today's Picks"}
+                    </h2>
+                    <div className="text-[15px] text-stone-500 flex gap-5 items-center">
+                      <span className="text-stone-800 font-medium tracking-wide">
+                        {isSearchMode
+                          ? "后端筛选结果"
+                          : "随机推荐 · 分散同店内容"}
+                      </span>
+                      <span className="tracking-wide">{visibleCountText}</span>
+                    </div>
+                  </motion.div>
+                  {errorMessage ? (
+                    <EmptyState text={errorMessage} />
+                  ) : isLoading ? (
+                    <LoadingState />
+                  ) : displayedData.length === 0 ? (
+                    <EmptyState text="未找到匹配的美食，换个关键词试试？" />
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">
+                      {displayedData.map((item, index) => (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.5,
+                            delay:
+                              index < DISCOVER_PAGE_SIZE ? index * 0.03 : 0,
+                            ease: "easeOut",
+                          }}
+                        >
+                          <FoodCard
+                            item={item}
+                            onClick={() => void openDetail(item.id)}
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                  {!errorMessage && !isLoading && displayedData.length > 0 && (
+                    <div className="flex flex-col items-center gap-4 pt-10">
+                      {hasMoreDiscover ? (
+                        <button
+                          onClick={() =>
+                            setDiscoverPage((previous) => previous + 1)
+                          }
+                          disabled={isLoadingMore}
+                          className="px-5 py-2.5 rounded-full bg-white border border-stone-200 text-stone-700 shadow-sm hover:bg-stone-50 transition-colors disabled:opacity-60"
+                        >
+                          {isLoadingMore ? "加载中..." : "加载更多菜品"}
+                        </button>
+                      ) : (
+                        <p className="text-sm text-stone-400">
+                          这一轮推荐已经看完了
+                        </p>
+                      )}
+                      <div ref={loadMoreRef} className="h-6 w-full" />
+                    </div>
+                  )}
+                </motion.section>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="favorites"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="pt-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+              >
+                <div className="mb-12">
+                  <h1 className="text-4xl font-serif font-bold text-stone-800 tracking-tight flex items-center gap-4">
+                    我的收藏夹
+                    <span className="text-xl font-sans font-medium text-rose-500 bg-rose-50 px-3 py-1 rounded-full">
+                      {favorites.length}
                     </span>
-                    <span className="tracking-wide">{visibleCountText}</span>
+                  </h1>
+                  <p className="text-stone-500 mt-3 text-lg">
+                    Your curated collection of campus flavors.
+                  </p>
+                </div>
+                {favoriteItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-32 text-center bg-stone-50/50 rounded-[40px] border border-stone-100 border-dashed">
+                    <div className="w-24 h-24 bg-white rounded-full shadow-sm flex items-center justify-center mb-6">
+                      <HeartCrack
+                        className="w-10 h-10 text-stone-300"
+                        strokeWidth={1}
+                      />
+                    </div>
+                    <h3 className="text-xl font-semibold text-stone-800 mb-2">
+                      好像什么都没有
+                    </h3>
+                    <p className="text-stone-500 max-w-sm">
+                      去发现页面逛逛吧，遇到想吃的美食点个红心就会出现在这里。
+                    </p>
                   </div>
-                </motion.div>
-                {errorMessage ? (
-                  <EmptyState text={errorMessage} />
-                ) : isLoading ? (
-                  <LoadingState />
-                ) : displayedData.length === 0 ? (
-                  <EmptyState text="未找到匹配的美食，换个关键词试试？" />
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">
-                    {displayedData.map((item, index) => (
+                    {favoriteItems.map((item) => (
                       <motion.div
                         key={item.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{
-                          duration: 0.5,
-                          delay: index < DISCOVER_PAGE_SIZE ? index * 0.03 : 0,
-                          ease: "easeOut",
-                        }}
+                        layout
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.3, type: "spring" }}
                       >
                         <FoodCard
                           item={item}
@@ -2186,105 +2269,30 @@ export default function App() {
                     ))}
                   </div>
                 )}
-                {!errorMessage && !isLoading && displayedData.length > 0 && (
-                  <div className="flex flex-col items-center gap-4 pt-10">
-                    {hasMoreDiscover ? (
-                      <button
-                        onClick={() =>
-                          setDiscoverPage((previous) => previous + 1)
-                        }
-                        disabled={isLoadingMore}
-                        className="px-5 py-2.5 rounded-full bg-white border border-stone-200 text-stone-700 shadow-sm hover:bg-stone-50 transition-colors disabled:opacity-60"
-                      >
-                        {isLoadingMore ? "加载中..." : "加载更多菜品"}
-                      </button>
-                    ) : (
-                      <p className="text-sm text-stone-400">
-                        这一轮推荐已经看完了
-                      </p>
-                    )}
-                    <div ref={loadMoreRef} className="h-6 w-full" />
-                  </div>
-                )}
-              </motion.section>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="favorites"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="pt-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
-            >
-              <div className="mb-12">
-                <h1 className="text-4xl font-serif font-bold text-stone-800 tracking-tight flex items-center gap-4">
-                  我的收藏夹
-                  <span className="text-xl font-sans font-medium text-rose-500 bg-rose-50 px-3 py-1 rounded-full">
-                    {favorites.length}
-                  </span>
-                </h1>
-                <p className="text-stone-500 mt-3 text-lg">
-                  Your curated collection of campus flavors.
-                </p>
-              </div>
-              {favoriteItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-32 text-center bg-stone-50/50 rounded-[40px] border border-stone-100 border-dashed">
-                  <div className="w-24 h-24 bg-white rounded-full shadow-sm flex items-center justify-center mb-6">
-                    <HeartCrack
-                      className="w-10 h-10 text-stone-300"
-                      strokeWidth={1}
-                    />
-                  </div>
-                  <h3 className="text-xl font-semibold text-stone-800 mb-2">
-                    好像什么都没有
-                  </h3>
-                  <p className="text-stone-500 max-w-sm">
-                    去发现页面逛逛吧，遇到想吃的美食点个红心就会出现在这里。
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">
-                  {favoriteItems.map((item) => (
-                    <motion.div
-                      key={item.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ duration: 0.3, type: "spring" }}
-                    >
-                      <FoodCard
-                        item={item}
-                        onClick={() => void openDetail(item.id)}
-                      />
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </main>
 
-      <DetailDrawer
-        item={selectedItem}
-        isOpen={!!selectedItem && !expandedItem}
-        onClose={() => setSelectedItem(null)}
-        onExpand={(item) => {
-          setSelectedItem(null);
-          setExpandedItem(item);
-        }}
-      />
-      <FullScreenDetail
-        item={expandedItem}
-        isOpen={!!expandedItem}
-        onClose={() => setExpandedItem(null)}
-      />
-      <XiaoDFloatingChat
-        menus={menuCache}
-        onPickItem={(item) => void openDetail(item.id)}
-      />
-    </div>
+        <DetailDrawer
+          item={selectedItem}
+          isOpen={!!selectedItem && !expandedItem}
+          onClose={() => setSelectedItem(null)}
+          onExpand={(item) => {
+            setSelectedItem(null);
+            setExpandedItem(item);
+          }}
+        />
+        <FullScreenDetail
+          item={expandedItem}
+          isOpen={!!expandedItem}
+          onClose={() => setExpandedItem(null)}
+        />
+        <XiaoDFloatingChat
+          menus={menuCache}
+          onPickItem={(item) => void openDetail(item.id)}
+        />
+      </div>
+    </MotionConfig>
   );
 }
