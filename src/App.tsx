@@ -1809,8 +1809,16 @@ export default function App() {
     data: MenusResponse["data"];
   } | null>(null);
   const prefetchingPageRef = useRef<number | null>(null);
+  const observerRequestedPageRef = useRef<number | null>(null);
+  const discoverPageRef = useRef(discoverPage);
+  const isLoadingRef = useRef(isLoading);
+  const isLoadingMoreRef = useRef(isLoadingMore);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const isSearchMode = Boolean(deferredSearchQuery);
+
+  discoverPageRef.current = discoverPage;
+  isLoadingRef.current = isLoading;
+  isLoadingMoreRef.current = isLoadingMore;
 
   useEffect(() => {
     const saved = window.localStorage.getItem("xd-food-favorites");
@@ -1863,6 +1871,7 @@ export default function App() {
     setHasMoreDiscover(true);
     prefetchedPageRef.current = null;
     prefetchingPageRef.current = null;
+    observerRequestedPageRef.current = null;
   }, [deferredSearchQuery]);
 
   useEffect(() => {
@@ -1871,6 +1880,7 @@ export default function App() {
 
     function applyDiscoverResponse(data: MenusResponse["data"]) {
       const incomingItems = data.items;
+      observerRequestedPageRef.current = null;
       setDiscoverItems((previous) =>
         discoverPage === 1
           ? incomingItems
@@ -2058,10 +2068,22 @@ export default function App() {
       (entries) => {
         const [entry] = entries;
         if (entry?.isIntersecting) {
-          setDiscoverPage((previous) => previous + 1);
+          const nextPage = discoverPageRef.current + 1;
+          if (
+            observerRequestedPageRef.current === nextPage ||
+            isLoadingRef.current ||
+            isLoadingMoreRef.current
+          ) {
+            return;
+          }
+
+          observerRequestedPageRef.current = nextPage;
+          setDiscoverPage((previous) =>
+            previous >= nextPage ? previous : nextPage,
+          );
         }
       },
-      { rootMargin: "320px 0px" },
+      { rootMargin: "1200px 0px", threshold: 0.01 },
     );
 
     observer.observe(target);
@@ -2152,7 +2174,7 @@ export default function App() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{
                           duration: 0.5,
-                          delay: index * 0.05,
+                          delay: index < DISCOVER_PAGE_SIZE ? index * 0.03 : 0,
                           ease: "easeOut",
                         }}
                       >
