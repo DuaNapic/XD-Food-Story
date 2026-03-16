@@ -3,10 +3,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 import { LLM_ENABLED } from "./config.js";
+import { logAudit } from "./services/auditService.js";
 import metaRoutes from "./routes/metaRoutes.js";
 import menuRoutes from "./routes/menuRoutes.js";
 import recommendRoutes from "./routes/recommendRoutes.js";
+import favoriteRoutes from "./routes/favoriteRoutes.js";
 import { fail } from "./lib/http.js";
 import { getCurrentTimeContext } from "./services/timeContext.js";
 
@@ -17,7 +20,16 @@ export function createApp() {
   const distDir = resolve(currentDirPath, "../dist");
   const distIndexPath = resolve(distDir, "index.html");
   const hasDistBuild = existsSync(distIndexPath);
+  // Global Rate Limiter
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: { message: "Too many requests, please try again later." } }
+  });
 
+  app.use(globalLimiter);
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
 
@@ -35,6 +47,7 @@ export function createApp() {
   app.use("/api/meta", metaRoutes);
   app.use("/api/menus", menuRoutes);
   app.use("/api/recommend", recommendRoutes);
+  app.use("/api/favorites", favoriteRoutes);
 
   if (hasDistBuild) {
     app.use(express.static(distDir));

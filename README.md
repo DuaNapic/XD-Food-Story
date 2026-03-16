@@ -1,69 +1,81 @@
-# XD-Food-Story（团队快速上手）
+# 🍱 XD-Food-Story (XD食物语)
+> **西电学子的专属 AI 美食探索指南** 🚀
 
-这个项目已经是前后端分离架构：
+「XD食物语」是一款专为西电校内师生打造的智慧餐饮探索平台。通过创新的 **3D 交互**与 **AI 大模型**技术，彻底解决“今天吃什么”的校园终极难题。
 
-- 前端：`src/`（React + Vite）
-- 后端：`server/`（Node + Express）
-- 数据：`server/data/recommended_menus_frontend_ui.json`
+---
 
-## 1) 先配 `.env`
+## ✨ 核心特性
 
-复制 `.env.example` 为 `.env`，至少确认这几项：
+- **🤖 3D 虚拟助手“西小电”**：基于 `React Three Fiber` 手捏的 3D 机器人，具备“空闲、思考、倾听、微笑”四种动态模式，提供沉浸式 AI 对话体验。
+- **🔍 多维智能筛选**：采用 `Jotai` 进行状态管理，支持餐厅位置、最高价格、热量阈值、健康评分等多维度标签实时过滤。
+- **🧠 雙引擎 AI 思考**：集成高階 LLM 推理與本地菜單數據庫，不僅能“聊天”，更能結合現實菜單給出精準推薦。
+- **📱 極致動效體驗**：全量接入 `Framer Motion` 與 `Tailwind CSS`，從“靈動島”風格的入口到流暢的頁面過渡，提供 App 級的原生手感。
+- **🛡️ 企業級安全架構**：
+    - **Session 數據隔離**：基於 Session 的收藏夾數據雲端同步。
+    - **全方位審計**：後端內置 `Audit Logger` 記錄關鍵操作。
+    - **頻率限制**：應用 `Rate Limiting` 防止 AI 接口異常刷取。
+- **📊 數據可視化**：利用 `Recharts` 展示菜品的营养特征雷达图与食堂人流趋势。
 
-- `PORT=3001`
-- `LLM_API_KEY=你的key`
-- `LLM_BASE_URL=https://api.deepseek.com/v1`
-- `LLM_MODEL=deepseek-chat`
+---
 
-如果你不用大模型，也能跑（会走规则 fallback）。
+## 🛠️ 技術棧
 
-## 2) 一套命令跑起来
+| 領域 | 核心技術 |
+| :--- | :--- |
+| **前端 (Frontend)** | React 19 + Vite + TypeScript |
+| **狀態管理 (State)** | Jotai (Atom-based State Management) |
+| **3D 渲染 (3D Engine)** | React Three Fiber + Three.js + Drei |
+| **動畫 (Animation)** | Framer Motion |
+| **後端 (Backend)** | Node.js + Express 5 |
+| **安全 (Security)** | express-rate-limit + Session Guard |
+| **樣式 (Styling)** | Tailwind CSS + Lucide Icons |
 
+---
+
+## 🚀 本地快速啟動
+
+### 1. 克隆倉庫
+```bash
+git clone <PROJECT_URL>
+cd XD-Food-Story
+```
+
+### 2. 安裝依賴
 ```bash
 npm install
-npm run build
-npm run server
 ```
 
-打开：`http://localhost:3001`
+### 3. 環境配置
+在項目根目錄創建 `.env` 文件，並配置您的 LLM 密鑰：
+```env
+# LLM 配置 (支持 DashScope / OpenAI 格式)
+LLM_API_KEY=<YOUR_API_KEY>
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-turbo
 
-开发模式（可选）：
-
-```bash
-npm run server
-npm run dev
+# 服務器配置
+PORT=3001
+DATA_FILE_PATH=./server/data/recommended_menus_frontend_ui.json
 ```
 
-前端地址：`http://localhost:5173`
+### 4. 啟動項目
+本項目採用前後端分離架構，請分別在兩個終端運行：
 
-## 3) 前后端分工（当前实现）
+*   **終端 A (啟動後端服務)**:
+    ```bash
+    npm run server:dev
+    ```
+*   **終端 B (啟動前端開發)**:
+    ```bash
+    npm run dev
+    ```
 
-前端负责：
+---
 
-- 页面渲染、交互、收藏、详情弹层
-- 搜索关键词本地过滤（前端全量缓存后本地筛）
-- 组织聊天上下文并传给后端（`conversation_history`）
+## 🎯 參賽願景
 
-后端负责：
+校園餐飲的選擇不僅是味蕾的考量，更是效率與情緒價值的平衡。「XD食物语」旨在通過現代 Web 技術，優化校園生活基礎體驗，為“星火杯”等創新創業賽事貢獻一份兼具技術深度與人文關懷的答卷。🎉
 
-- 菜单数据读取、分页、过滤、排序
-- 推荐链路：意图解析 → 候选召回/打分 → 解释生成
-- LLM 调用与 fallback（无 key 时自动降级）
-- 生产环境静态托管 `dist`
-
-## 4) 我们下一步重点
-
-1. 网站性能优化（首屏、滚动流畅度、图片与重渲染成本）
-2. AI 推荐能力增强（推荐理由质量、命中率、可解释性）
-3. 标签多重筛选（放在搜索框下方，支持组合条件）
-   - 示例：`海棠一楼` + `小炒热菜` + `午餐` + `15~20元`
-4. 建议补充
-   - 加埋点与性能看板（先量化再优化）
-   - 给推荐结果加评估集（离线评测 + 人工打分）
-   - 增加错误可观测性（请求链路日志、前端异常上报）
-
-## 5) 团队文档（都在仓库内）
-
-- `docs/AI前后端接口契约.md`
-- `docs/新对话完整Prompt.md`
-- `docs/团队协作说明.md`
+---
+**Made with ❤️ for Xidianers.**

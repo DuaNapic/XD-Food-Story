@@ -202,8 +202,9 @@ function scoreItem(item, intent) {
         item.title,
         item.shop_text,
         item.location_text,
+        item.ai_insight, // 新增：支持对 AI 洞察描述的关键词检索
         ...item.flavor_options,
-      ].some((field) => includesIgnoreCase(field, keyword)),
+      ].some((field) => includesIgnoreCase(String(field), keyword)),
     );
     if (keywordHit) {
       score += DEFAULT_WEIGHTS.keyword;
@@ -302,3 +303,43 @@ export async function searchRecommendations(intent, { debug = false } = {}) {
     },
   };
 }
+
+export async function getQuickCandidates(query, limit = 20) {
+  const menus = await loadMenus();
+  if (!query) return menus.slice(0, limit);
+
+  const keywords = query
+    .split(/[\s,，。！!？?、]/)
+    .filter((k) => k.trim().length > 0);
+
+  const scored = menus
+    .map((item) => {
+      let score = 0;
+      const searchableText = [
+        item.title,
+        item.shop_text,
+        item.location_text,
+        item.category,
+        ...item.flavor_options,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      for (const k of keywords) {
+        if (searchableText.includes(k.toLowerCase())) {
+          score += 1;
+        }
+      }
+
+      return { item, score };
+    })
+    .filter((s) => s.score > 0);
+
+  const results = scored.length > 0 ? scored : menus.map((item) => ({ item, score: 0 }));
+
+  return results
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((s) => s.item);
+}
+

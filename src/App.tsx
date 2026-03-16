@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useDeferredValue,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -37,12 +38,71 @@ import {
   X,
 } from "lucide-react";
 import XiaoD from "./components/XiaoD";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { cn } from "./lib/utils";
 
 const favoritesAtom = atom<string[]>([]);
 const viewAtom = atom<"discover" | "favorites">("discover");
 const searchQueryAtom = atom<string>("");
 const isAiModeAtom = atom<boolean>(false);
+
+// MASTER-CLASS: Centralized Animation Variants
+const ANIM_VARIANTS = {
+  fadeInUp: {
+    initial: { opacity: 0, y: 12 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: 10 },
+    transition: { type: "spring", stiffness: 260, damping: 24 }
+  },
+  fadeInScale: {
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.95 },
+    transition: { type: "spring", stiffness: 300, damping: 25 }
+  },
+  stagger: {
+    animate: {
+      transition: { staggerChildren: 0.08, delayChildren: 0.1 }
+    }
+  }
+};
+
+type FilterState = {
+  canteen: string;
+  maxPrice: number | null;
+  maxCalories: number | null;
+  minHealth: number | null;
+};
+const filtersAtom = atom<FilterState>({
+  canteen: "all",
+  maxPrice: null,
+  maxCalories: null,
+  minHealth: null,
+});
+
+const FILTER_OPTIONS = {
+  canteens: [
+    { id: "all", label: "全部" },
+    { id: "海棠", label: "海棠" },
+    { id: "丁香", label: "丁香" },
+    { id: "竹园", label: "竹园" },
+  ],
+  prices: [
+    { id: null, label: "不限" },
+    { id: 10, label: "≤10元" },
+    { id: 15, label: "≤15元" },
+    { id: 25, label: "≤25元" },
+  ],
+  calories: [
+    { id: null, label: "不限热量" },
+    { id: 400, label: "轻食低卡(≤400)" },
+    { id: 600, label: "常规(≤600)" },
+  ],
+  health: [
+    { id: null, label: "不限健康度" },
+    { id: 80, label: "健康优选(≥80分)" },
+  ],
+};
 
 type MealTime = "早餐" | "午餐" | "晚餐";
 type Spiciness = "不辣" | "微辣" | "中辣" | "特辣" | "可选辣";
@@ -53,6 +113,8 @@ interface RadarScores {
   value: number;
   satiety: number;
   health: number;
+  wait_time?: number;
+  aesthetic?: number;
 }
 
 interface MenuItem {
@@ -98,14 +160,6 @@ interface MenuDetailResponse {
   success: boolean;
   data: {
     item: MenuItem;
-  };
-}
-
-interface RecommendQueryResponse {
-  success: boolean;
-  data: {
-    reply_text: string;
-    items: RankedMenuItem[];
   };
 }
 
@@ -163,7 +217,8 @@ function getImageUrl(imageKey: string) {
   return imageMap[imageKey] || imageMap.snack;
 }
 
-function normalizeRadarScore(value: number) {
+function normalizeRadarScore(value: number | undefined) {
+  if (value === undefined || value === null) return 0;
   if (value <= 5) {
     return clamp(Math.round(value * 20), 0, 100);
   }
@@ -319,23 +374,57 @@ function mergeMenus(existing: MenuItem[], incoming: MenuItem[]) {
   return [...merged.values()];
 }
 
-function filterMenusByKeyword(items: MenuItem[], keyword: string) {
-  const normalizedKeyword = keyword.trim().toLowerCase();
+function filterItems(
+  items: MenuItem[],
+  keyword: string,
+  filters: FilterState,
+) {
+  let filtered = items;
 
-  if (!normalizedKeyword) {
-    return items;
+  // Keyword filter
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (normalizedKeyword) {
+    filtered = filtered.filter((item) =>
+      [
+        item.title,
+        item.shop_text,
+        item.location_text,
+        item.stall_text,
+        item.category,
+        ...item.flavor_options,
+      ].some((field) => field.toLowerCase().includes(normalizedKeyword)),
+    );
   }
 
-  return items.filter((item) =>
-    [
-      item.title,
-      item.shop_text,
-      item.location_text,
-      item.stall_text,
-      item.category,
-      ...item.flavor_options,
-    ].some((field) => field.toLowerCase().includes(normalizedKeyword)),
-  );
+  // Canteen filter
+  if (filters.canteen !== "all") {
+    filtered = filtered.filter((item) =>
+      item.location_text.includes(filters.canteen),
+    );
+  }
+
+  // Price filter
+  if (filters.maxPrice !== null) {
+    filtered = filtered.filter((item) => item.price <= (filters.maxPrice ?? 999));
+  }
+
+  // Calories filter (estimated)
+  if (filters.maxCalories !== null) {
+    filtered = filtered.filter((item) => {
+      const estimate = buildMacroEstimate(item);
+      return estimate.calories <= (filters.maxCalories ?? 2000);
+    });
+  }
+
+  // Health filter (radar based)
+  if (filters.minHealth !== null) {
+    filtered = filtered.filter((item) => {
+      const healthScore = normalizeRadarScore(item.radar.health);
+      return healthScore >= (filters.minHealth ?? 0);
+    });
+  }
+
+  return filtered;
 }
 
 function buildDiscoverRequestUrl({
@@ -363,13 +452,13 @@ function buildDiscoverRequestUrl({
   return `/api/menus?${params.toString()}`;
 }
 
-const Sidebar = () => {
+const Sidebar = React.memo(() => {
   const [currentView, setView] = useAtom(viewAtom);
   const [favorites] = useAtom(favoritesAtom);
 
   return (
     <>
-      <aside className="hidden md:flex flex-col fixed top-0 left-0 h-screen w-20 lg:w-64 bg-white/50 backdrop-blur-xl border-r border-stone-100 z-40 transition-all duration-300">
+      <aside className="hidden md:flex flex-col fixed top-0 left-0 h-screen w-20 lg:w-64 bg-white/70 backdrop-blur-xl border-r border-stone-100 z-40 transition-all duration-300">
         <div className="h-20 flex items-center justify-center lg:justify-start lg:px-8 border-b border-stone-100">
           <ChefHat
             className="w-7 h-7 text-stone-800 flex-shrink-0"
@@ -436,8 +525,8 @@ const Sidebar = () => {
           </button>
         </nav>
       </aside>
-      <div className="md:hidden fixed bottom-6 inset-x-0 z-40 px-6 pointer-events-none">
-        <div className="bg-stone-800/90 backdrop-blur-xl p-2 rounded-full shadow-2xl flex items-center justify-around pointer-events-auto border border-stone-700/50">
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 px-6 pb-[max(env(safe-area-inset-bottom),24px)] pointer-events-none">
+        <div className="bg-stone-800/90 backdrop-blur-md p-2 rounded-full shadow-2xl flex items-center justify-around pointer-events-auto border border-stone-700/50">
           <button
             onClick={() => setView("discover")}
             className={cn(
@@ -479,18 +568,105 @@ const Sidebar = () => {
       </div>
     </>
   );
-};
+});
 
-const Hero = ({ menuCount }: { menuCount: number }) => {
+const FilterSection = React.memo(() => {
+  const [filters, setFilters] = useAtom(filtersAtom);
+
+  const filterGroups = [
+    {
+      label: "食堂",
+      key: "canteen" as const,
+      options: FILTER_OPTIONS.canteens,
+    },
+    {
+      label: "价格",
+      key: "maxPrice" as const,
+      options: FILTER_OPTIONS.prices,
+    },
+    {
+      label: "热量",
+      key: "maxCalories" as const,
+      options: FILTER_OPTIONS.calories,
+    },
+    {
+      label: "健康",
+      key: "minHealth" as const,
+      options: FILTER_OPTIONS.health,
+    },
+  ];
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 mb-10">
+      <div className="flex flex-col gap-5 p-6 bg-white/95 backdrop-blur-md md:backdrop-blur-2xl md:bg-white/50 rounded-[32px] border border-stone-200/40 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-500 md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.04)]">
+        {filterGroups.map((group) => (
+          <div key={group.label} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
+            <div className="flex items-center gap-2 min-w-[64px]">
+               <div className="w-1 h-3.5 bg-orange-400/40 rounded-full" />
+               <span className="text-[12px] font-bold text-stone-400 uppercase tracking-[0.1em]">
+                {group.label}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {group.options.map((option) => {
+                const isActive = filters[group.key] === option.id;
+                return (
+                  <button
+                    key={String(option.id)}
+                    onClick={() => setFilters({ ...filters, [group.key]: option.id })}
+                    className={cn(
+                      "group relative px-4 py-1.5 rounded-full text-[13.5px] font-medium transition-all duration-300 active:scale-95",
+                      isActive
+                        ? "bg-stone-800 text-white shadow-md shadow-stone-800/15"
+                        : "bg-white/40 text-stone-500 border border-stone-100/50 md:hover:bg-stone-100 md:hover:text-stone-800 md:hover:border-stone-200 active:bg-stone-50 active:scale-95"
+                    )}
+                  >
+                    {option.label}
+                    {isActive && (
+                      <motion.div
+                        layoutId={`active-pill-${group.label}`}
+                        className="absolute inset-0 rounded-full ring-2 ring-stone-800/10 pointer-events-none"
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const Hero = React.memo(({ menuCount }: { menuCount: number }) => {
   const [searchQuery, setSearchQuery] = useAtom(searchQueryAtom);
+  const [localQuery, setLocalQuery] = useState(searchQuery);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 同步外部清除操作
+  useEffect(() => {
+    if (searchQuery === "") {
+      setLocalQuery("");
+    }
+  }, [searchQuery]);
+
+  // 防抖更新 Atom 狀態
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(localQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localQuery, setSearchQuery]);
 
   return (
     <section className="pt-20 pb-12 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center relative z-20">
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 100, damping: 20 }}
+        variants={ANIM_VARIANTS.fadeInUp}
+        initial="initial"
+        animate="animate"
+        exit="exit"
         className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 backdrop-blur-md border border-stone-200/60 shadow-sm mb-8 relative"
       >
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -544,9 +720,11 @@ const Hero = ({ menuCount }: { menuCount: number }) => {
       </div>
 
       <motion.p
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.1 }}
+        variants={ANIM_VARIANTS.fadeInUp}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        transition={{ ...ANIM_VARIANTS.fadeInUp.transition, delay: 0.1 } as any}
         className="text-lg md:text-xl text-stone-500 max-w-xl mx-auto mb-10 font-light leading-relaxed"
       >
         发现校园最佳美食，或点击右下角的
@@ -555,12 +733,14 @@ const Hero = ({ menuCount }: { menuCount: number }) => {
       </motion.p>
 
       <motion.div
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: "spring", stiffness: 120, damping: 20, delay: 0.2 }}
+        variants={ANIM_VARIANTS.fadeInScale}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        transition={{ ...ANIM_VARIANTS.fadeInScale.transition, delay: 0.2 } as any}
         className="relative max-w-xl mx-auto group/search"
       >
-        <div className="flex items-center bg-white/70 backdrop-blur-2xl rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] ring-1 ring-stone-900/5 hover:ring-stone-900/10 focus-within:ring-stone-900/15 focus-within:bg-white/90 focus-within:shadow-lg transition-all duration-300 px-5 py-3.5">
+        <div className="flex items-center bg-white/95 backdrop-blur-md md:backdrop-blur-2xl md:bg-white/70 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] ring-1 ring-stone-900/5 md:hover:ring-stone-900/10 focus-within:ring-stone-900/15 focus-within:bg-white/90 focus-within:shadow-lg transition-all duration-300 px-5 py-3.5">
           <Search
             className="w-5 h-5 text-stone-400 group-focus-within/search:text-stone-700 transition-colors shrink-0"
             strokeWidth={2}
@@ -568,18 +748,19 @@ const Hero = ({ menuCount }: { menuCount: number }) => {
           <input
             ref={inputRef}
             type="text"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            value={localQuery}
+            onChange={(event) => setLocalQuery(event.target.value)}
             placeholder="搜索菜名、食堂..."
             className="flex-1 ml-3 bg-transparent border-none focus:ring-0 text-stone-800 placeholder-stone-400 font-medium outline-none text-[16px]"
           />
           {searchQuery && (
             <button
               onClick={() => {
+                setLocalQuery("");
                 setSearchQuery("");
                 inputRef.current?.focus();
               }}
-              className="text-stone-300 hover:text-stone-500 transition-colors ml-2"
+              className="text-stone-300 md:hover:text-stone-500 active:text-stone-600 transition-colors ml-2 p-2"
             >
               <X className="w-4 h-4" strokeWidth={2} />
             </button>
@@ -597,14 +778,14 @@ const Hero = ({ menuCount }: { menuCount: number }) => {
       </motion.div>
     </section>
   );
-};
+});
 
-const FoodCard = ({
+const FoodCard = React.memo(({
   item,
   onClick,
 }: {
   item: MenuItem;
-  onClick: () => void;
+  onClick: (id: string) => void;
 }) => {
   const [favorites, setFavorites] = useAtom(favoritesAtom);
   const isFavorite = favorites.includes(item.id);
@@ -621,10 +802,19 @@ const FoodCard = ({
 
   return (
     <motion.div
+      variants={ANIM_VARIANTS.fadeInScale}
+      initial="initial"
+      animate="animate"
       whileHover={{ y: -8, scale: 1.02 }}
-      transition={{ type: "spring", stiffness: 300, damping: 25 }}
-      onClick={onClick}
-      className="bg-white/90 backdrop-blur-xl rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] cursor-pointer flex flex-col group relative ring-1 ring-stone-900/5 hover:ring-stone-900/10 transition-all duration-300"
+      transition={{ 
+        ...ANIM_VARIANTS.fadeInScale.transition,
+        type: "spring",
+        stiffness: 300,
+        damping: 25 
+      } as any}
+      onClick={() => onClick(item.id)}
+      style={{ willChange: "transform, opacity" }}
+      className="bg-white/95 md:bg-white/90 backdrop-blur-md md:backdrop-blur-xl rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)] md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] cursor-pointer flex flex-col group relative ring-1 ring-stone-900/5 md:hover:ring-stone-900/10 transition-all duration-300 active:scale-[0.98]"
     >
       <div className="relative h-48 sm:h-56 overflow-hidden">
         <motion.img
@@ -634,7 +824,7 @@ const FoodCard = ({
           decoding="async"
           whileHover={{ scale: 1.05 }}
           transition={{ duration: 0.7, ease: [0.33, 1, 0.68, 1] }}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover origin-center"
         />
         <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full text-[13px] font-medium text-stone-700 shadow-sm flex items-center gap-1.5 z-10">
           <Utensils className="w-3.5 h-3.5 text-orange-500" strokeWidth={2} />
@@ -642,7 +832,7 @@ const FoodCard = ({
         </div>
         <button
           onClick={toggleFavorite}
-          className="absolute top-4 right-4 p-2.5 rounded-full bg-white/80 backdrop-blur-md shadow-sm z-10 hover:scale-110 active:scale-95 transition-transform"
+          className="absolute top-4 right-4 p-3 rounded-full bg-white/80 backdrop-blur-md shadow-sm z-10 md:hover:scale-110 active:scale-95 transition-transform"
         >
           <Heart
             className={cn(
@@ -672,9 +862,9 @@ const FoodCard = ({
       </div>
     </motion.div>
   );
-};
+});
 
-const DetailDrawer = ({
+const DetailDrawer = React.memo(({
   item,
   isOpen,
   onClose,
@@ -685,30 +875,41 @@ const DetailDrawer = ({
   onClose: () => void;
   onExpand: (item: MenuItem) => void;
 }) => {
-  const chartData = item
-    ? [
-        {
-          subject: "味道",
-          A: normalizeRadarScore(item.radar.taste),
-          fullMark: 100,
-        },
-        {
-          subject: "性价比",
-          A: normalizeRadarScore(item.radar.value),
-          fullMark: 100,
-        },
-        {
-          subject: "饱腹感",
-          A: normalizeRadarScore(item.radar.satiety),
-          fullMark: 100,
-        },
-        {
-          subject: "健康度",
-          A: normalizeRadarScore(item.radar.health),
-          fullMark: 100,
-        },
-      ]
-    : [];
+  const chartData = useMemo(() => {
+    if (!item) return [];
+    return [
+      {
+        subject: "味道",
+        A: normalizeRadarScore(item.radar?.taste),
+        fullMark: 100,
+      },
+      {
+        subject: "性价比",
+        A: normalizeRadarScore(item.radar?.value),
+        fullMark: 100,
+      },
+      {
+        subject: "饱腹感",
+        A: normalizeRadarScore(item.radar?.satiety),
+        fullMark: 100,
+      },
+      {
+        subject: "健康度",
+        A: normalizeRadarScore(item.radar?.health),
+        fullMark: 100,
+      },
+      {
+        subject: "出餐速度",
+        A: normalizeRadarScore(item.radar?.wait_time),
+        fullMark: 100,
+      },
+      {
+        subject: "颜值",
+        A: normalizeRadarScore(item.radar?.aesthetic),
+        fullMark: 100,
+      },
+    ];
+  }, [item]);
 
   return (
     <AnimatePresence>
@@ -735,12 +936,12 @@ const DetailDrawer = ({
               stiffness: 250,
               mass: 0.8,
             }}
-            className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-[#FDFDFD] shadow-2xl z-50 overflow-y-auto flex flex-col"
+            className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-[#FDFDFD] shadow-2xl z-50 overflow-y-auto flex flex-col pb-[max(env(safe-area-inset-bottom),0px)]"
           >
             <div className="sticky top-0 z-10 bg-[#FDFDFD]/80 backdrop-blur-xl px-6 py-4 flex justify-between items-center">
               <button
                 onClick={onClose}
-                className="p-2.5 -ml-2 rounded-full hover:bg-stone-100 transition-colors text-stone-500 hover:text-stone-800 bg-white shadow-sm border border-stone-100"
+                className="p-3 -ml-2 rounded-full md:hover:bg-stone-100 active:bg-stone-200 transition-colors text-stone-500 md:hover:text-stone-800 bg-white shadow-sm border border-stone-100"
               >
                 <X className="w-5 h-5" strokeWidth={1.5} />
               </button>
@@ -759,6 +960,8 @@ const DetailDrawer = ({
                 <img
                   src={getImageUrl(item.image_key)}
                   alt={item.title}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-lg">
@@ -773,24 +976,21 @@ const DetailDrawer = ({
                 transition={{ delay: 0.15, duration: 0.4 }}
                 className="mb-8"
               >
-                <h2 className="text-[28px] font-bold text-stone-800 mb-3 tracking-tight font-serif">
+                <div className="inline-flex items-center px-3 py-1.5 bg-orange-50 text-orange-700 rounded-xl shadow-sm text-[13.5px] font-bold border border-orange-100/50 mb-3">
+                  <MapPin className="w-4 h-4 mr-1.5" strokeWidth={2} />
+                  {item.location_text} · {item.shop_text} · {item.stall_text}
+                </div>
+                
+                <h2 className="text-[28px] font-bold text-stone-800 mb-4 tracking-tight font-serif leading-tight">
                   {item.title}
                 </h2>
-                <div className="flex flex-wrap gap-2">
-                  <div className="flex items-center px-3 py-1.5 bg-white rounded-xl shadow-sm text-[13.5px] font-medium text-stone-600 border border-stone-100">
-                    <MapPin
-                      className="w-4 h-4 mr-1.5 text-stone-400"
-                      strokeWidth={1.5}
-                    />
-                    {item.location_text} · {item.stall_text}
-                  </div>
-                  <div className="flex items-center px-3 py-1.5 bg-white rounded-xl shadow-sm text-[13.5px] font-medium text-stone-600 border border-stone-100">
-                    <Clock
-                      className="w-4 h-4 mr-1.5 text-stone-400"
-                      strokeWidth={1.5}
-                    />
-                    等待 {item.wait_time_text}
-                  </div>
+
+                <div className="flex items-center px-3 py-1.5 bg-white rounded-xl shadow-sm text-[13.5px] font-medium text-stone-600 border border-stone-100 w-fit">
+                  <Clock
+                    className="w-4 h-4 mr-1.5 text-stone-400"
+                    strokeWidth={1.5}
+                  />
+                  建议等待时间：{item.wait_time_text}
                 </div>
               </motion.div>
               <motion.div
@@ -828,7 +1028,8 @@ const DetailDrawer = ({
                       strokeWidth={1.5}
                       fill="#bae6fd"
                       fillOpacity={0.4}
-                      isAnimationActive={false}
+                      isAnimationActive={true}
+                      animationDuration={1500}
                     />
                   </RadarChart>
                 </ResponsiveContainer>
@@ -851,9 +1052,9 @@ const DetailDrawer = ({
       )}
     </AnimatePresence>
   );
-};
+});
 
-const FullScreenDetail = ({
+const FullScreenDetail = React.memo(({
   item,
   isOpen,
   onClose,
@@ -865,43 +1066,58 @@ const FullScreenDetail = ({
   const [favorites, setFavorites] = useAtom(favoritesAtom);
   const isFavorite = item ? favorites.includes(item.id) : false;
 
+  const chartData = useMemo(() => {
+    if (!item) return [];
+    return [
+      {
+        subject: "味道",
+        A: normalizeRadarScore(item.radar?.taste),
+        fullMark: 100,
+      },
+      {
+        subject: "性价比",
+        A: normalizeRadarScore(item.radar?.value),
+        fullMark: 100,
+      },
+      {
+        subject: "饱腹感",
+        A: normalizeRadarScore(item.radar?.satiety),
+        fullMark: 100,
+      },
+      {
+        subject: "健康度",
+        A: normalizeRadarScore(item.radar?.health),
+        fullMark: 100,
+      },
+      {
+        subject: "出餐速度",
+        A: normalizeRadarScore(item.radar?.wait_time),
+        fullMark: 100,
+      },
+      {
+        subject: "颜值",
+        A: normalizeRadarScore(item.radar?.aesthetic),
+        fullMark: 100,
+      },
+    ];
+  }, [item]);
+
+  const toggleFavorite = useCallback(() => {
+    if (!item) return;
+    setFavorites((previous) =>
+      previous.includes(item.id)
+        ? previous.filter((fav) => fav !== item.id)
+        : [...previous, item.id],
+    );
+  }, [item, setFavorites]);
+
   if (!item) {
     return null;
   }
 
-  const chartData = [
-    {
-      subject: "味道",
-      A: normalizeRadarScore(item.radar.taste),
-      fullMark: 100,
-    },
-    {
-      subject: "性价比",
-      A: normalizeRadarScore(item.radar.value),
-      fullMark: 100,
-    },
-    {
-      subject: "饱腹感",
-      A: normalizeRadarScore(item.radar.satiety),
-      fullMark: 100,
-    },
-    {
-      subject: "健康度",
-      A: normalizeRadarScore(item.radar.health),
-      fullMark: 100,
-    },
-  ];
   const macroEstimate = buildMacroEstimate(item);
   const crowdTrend = buildCrowdTrend(item);
   const referenceCards = buildReferenceCards(item);
-
-  const toggleFavorite = () => {
-    setFavorites(
-      isFavorite
-        ? favorites.filter((id) => id !== item.id)
-        : [...favorites, item.id],
-    );
-  };
 
   return (
     <AnimatePresence>
@@ -925,13 +1141,13 @@ const FullScreenDetail = ({
           <div className="sticky top-0 z-20 w-full px-6 py-4 flex justify-between items-center bg-gradient-to-b from-[#FDFDFD]/90 to-transparent backdrop-blur-[2px]">
             <button
               onClick={onClose}
-              className="p-3 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 hover:bg-stone-50 transition-colors text-stone-600 focus:outline-none"
+              className="p-4 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 md:hover:bg-stone-50 active:bg-stone-100 transition-colors text-stone-600 focus:outline-none"
             >
               <X className="w-6 h-6" strokeWidth={1.5} />
             </button>
             <button
               onClick={toggleFavorite}
-              className="p-3 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 hover:bg-rose-50 transition-all text-stone-600 hover:scale-105 active:scale-95 focus:outline-none"
+              className="p-4 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 md:hover:bg-rose-50 active:bg-rose-100 transition-all text-stone-600 md:hover:scale-105 active:scale-95 focus:outline-none"
             >
               <Heart
                 className={cn(
@@ -954,34 +1170,31 @@ const FullScreenDetail = ({
               <img
                 src={getImageUrl(item.image_key)}
                 alt={item.title}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 via-stone-900/10 to-transparent" />
               <div className="absolute bottom-8 left-8 right-8">
                 <div className="flex justify-between items-end gap-6">
-                  <div>
-                    <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3 tracking-tight font-serif">
+                  <div className="flex-1">
+                    <div className="inline-flex items-center px-4 py-2 bg-orange-500/90 backdrop-blur-md rounded-2xl text-[14px] font-bold text-white border border-orange-400/30 mb-4 shadow-lg">
+                      <MapPin className="w-4 h-4 mr-2" strokeWidth={2.5} />
+                      {item.location_text} · {item.shop_text} · {item.stall_text}
+                    </div>
+                    
+                    <h1 className="text-4xl sm:text-5xl font-bold text-white mb-6 tracking-tight font-serif drop-shadow-md leading-tight">
                       {item.title}
                     </h1>
-                    <div className="flex flex-wrap gap-2.5">
-                      <div className="flex items-center px-4 py-2 bg-white/20 backdrop-blur-md rounded-2xl text-sm font-medium text-white border border-white/10">
-                        <MapPin
-                          className="w-4 h-4 mr-2 opacity-80"
-                          strokeWidth={1.5}
-                        />
-                        {item.location_text} · {item.stall_text}
-                      </div>
-                      <div className="flex items-center px-4 py-2 bg-white/20 backdrop-blur-md rounded-2xl text-sm font-medium text-white border border-white/10">
-                        <Clock
-                          className="w-4 h-4 mr-2 opacity-80"
-                          strokeWidth={1.5}
-                        />
-                        高峰 {item.wait_time_text}
-                      </div>
+
+                    <div className="flex items-center px-4 py-2 bg-white/10 backdrop-blur-md rounded-2xl text-[13px] font-medium text-white border border-white/10 w-fit">
+                      <Clock className="w-3.5 h-3.5 mr-2 opacity-80" strokeWidth={1.5} />
+                      高峰预计等待：{item.wait_time_text}
                     </div>
                   </div>
-                  <div className="bg-white/90 backdrop-blur-md px-6 py-3 rounded-3xl shadow-lg">
-                    <span className="text-3xl font-bold text-stone-800">
+                  
+                  <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-3xl shadow-xl border border-white/20 transform translate-y-2">
+                    <span className="text-3xl font-bold text-stone-800 tracking-tight">
                       ¥{item.price.toFixed(1)}
                     </span>
                   </div>
@@ -1051,9 +1264,6 @@ const FullScreenDetail = ({
                         基于真实菜单字段整理出的速览卡片
                       </p>
                     </div>
-                    <button className="text-[14px] font-medium text-stone-800 hover:text-stone-500 transition-colors">
-                      实时接口数据
-                    </button>
                   </div>
                   <div className="flex overflow-x-auto pb-8 -mx-4 px-4 sm:-mx-8 sm:px-8 snap-x snap-mandatory hide-scrollbar gap-5">
                     {referenceCards.map((card) => (
@@ -1087,14 +1297,19 @@ const FullScreenDetail = ({
                         </p>
                       </div>
                     ))}
-                    <div className="min-w-[280px] sm:min-w-[320px] bg-stone-50/50 rounded-[32px] p-6 snap-center border-2 border-dashed border-stone-200 flex flex-col items-center justify-center">
-                      <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3">
-                        <Leaf className="w-5 h-5 text-stone-400" />
+                    <motion.button
+                      whileHover={{ scale: 0.98, backgroundColor: "#f5f5f4" }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={onClose}
+                      className="min-w-[280px] sm:min-w-[320px] bg-stone-50/50 rounded-[32px] p-6 snap-center border-2 border-dashed border-stone-200 flex flex-col items-center justify-center transition-colors group"
+                    >
+                      <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <Home className="w-5 h-5 text-stone-400 group-hover:text-stone-600" />
                       </div>
-                      <span className="font-medium text-stone-500">
+                      <span className="font-medium text-stone-500 group-hover:text-stone-700">
                         继续从首页或 AI 面板里挑下一道
                       </span>
-                    </div>
+                    </motion.button>
                   </div>
                 </motion.section>
               </div>
@@ -1148,7 +1363,8 @@ const FullScreenDetail = ({
                           strokeWidth={2}
                           fill="#bae6fd"
                           fillOpacity={0.4}
-                          isAnimationActive={false}
+                          isAnimationActive={true}
+                          animationDuration={1500}
                         />
                       </RadarChart>
                     </ResponsiveContainer>
@@ -1302,26 +1518,26 @@ const FullScreenDetail = ({
       )}
     </AnimatePresence>
   );
-};
+});
 
-function LoadingState() {
+const LoadingState = React.memo(() => {
   return (
     <div className="py-24 text-center text-stone-500 flex flex-col items-center gap-3">
       <LoaderCircle className="w-8 h-8 animate-spin text-stone-400" />
       <p>正在从后端加载菜单数据...</p>
     </div>
   );
-}
+});
 
-function EmptyState({ text }: { text: string }) {
+const EmptyState = React.memo(({ text }: { text: string }) => {
   return (
     <div className="py-20 text-center text-stone-500">
       <p>{text}</p>
     </div>
   );
-}
+});
 
-const XiaoDIcon = ({ size = 48 }: { size?: number }) => (
+const XiaoDIcon = React.memo(({ size = 48 }: { size?: number }) => (
   <svg
     width={size}
     height={size}
@@ -1401,9 +1617,80 @@ const XiaoDIcon = ({ size = 48 }: { size?: number }) => (
       </radialGradient>
     </defs>
   </svg>
-);
+));
 
-const XiaoDFloatingChat = ({
+const AIMagicIsland = React.memo(({
+  onOpen,
+  isHidden
+}: {
+  onOpen: () => void;
+  isHidden: boolean;
+}) => {
+  return (
+    <AnimatePresence>
+      {!isHidden && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none px-4 pb-[calc(max(env(safe-area-inset-bottom),24px)+88px)]">
+          <motion.div
+            initial={{ y: 100, opacity: 0, scale: 0.8 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: 100, opacity: 0, scale: 0.8 }}
+            whileHover={{ y: -4 }}
+            transition={{ 
+              type: "spring", 
+              stiffness: 260, 
+              damping: 24,
+              mass: 0.8
+            }}
+            style={{ willChange: "transform, opacity" }}
+            className="pointer-events-auto group relative"
+          >
+            {/* Aura Glow Effect */}
+            <motion.div
+              animate={{
+                opacity: [0.3, 0.6, 0.3],
+                scale: [1, 1.05, 1],
+              }}
+              transition={{
+                duration: 4,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              className="absolute -inset-2 bg-gradient-to-r from-blue-400/20 via-sky-400/20 to-indigo-400/20 rounded-[32px] blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+
+            <button
+              onClick={onOpen}
+              className="relative flex items-center gap-4 bg-white/95 md:bg-white/70 backdrop-blur-md md:backdrop-blur-2xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.1)] md:hover:shadow-[0_12px_48px_rgba(0,120,255,0.15)] px-6 py-3.5 rounded-[28px] transition-all active:scale-95 group"
+            >
+              <div className="relative">
+                <XiaoDIcon size={36} />
+                <div className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+                </div>
+              </div>
+              
+              <div className="flex flex-col items-start pr-2">
+                <span className="text-[14px] font-bold bg-gradient-to-r from-stone-800 to-stone-500 bg-clip-text text-transparent">
+                  准备好遇见美味了吗？
+                </span>
+                <span className="text-[11px] text-stone-400 font-medium tracking-wide">
+                  ASK XIAOD · 点击开启 AI 寻味
+                </span>
+              </div>
+
+              <div className="ml-2 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                <Sparkles className="w-4 h-4 text-stone-400 group-hover:text-blue-500 transition-colors" strokeWidth={2.5} />
+              </div>
+            </button>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+});
+
+const XiaoDFloatingChat = React.memo(({
   menus,
   onPickItem,
 }: {
@@ -1420,13 +1707,15 @@ const XiaoDFloatingChat = ({
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [isTalking, setIsTalking] = useState(false);
+
   const robotMode: RobotMode = isThinking
     ? "thinking"
-    : messages.length > 0
-      ? aiInput
-        ? "talking"
-        : "smiling"
-      : "idle";
+    : isTalking
+      ? "talking"
+      : messages.length > 0
+        ? "smiling"
+        : "idle";
 
   async function sendMessage() {
     const query = aiInput.trim();
@@ -1434,10 +1723,7 @@ const XiaoDFloatingChat = ({
       return;
     }
 
-    const conversationHistory = [
-      ...messages.slice(-6),
-      { role: "user", text: query },
-    ];
+    const conversationHistory = [...messages.slice(-6)];
 
     setAiInput("");
     setRecommendations([]);
@@ -1449,36 +1735,95 @@ const XiaoDFloatingChat = ({
     );
 
     try {
-      const response = await fetchJson<RecommendQueryResponse>(
-        "/api/recommend/query",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query,
-            conversation_history: conversationHistory,
-            top_k: 4,
-            include_explanations: true,
-            debug: false,
-          }),
-        },
-      );
+      const response = await fetch("/api/recommend/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          conversation_history: conversationHistory,
+          top_k: 4,
+        }),
+      });
 
-      setMessages((previous) => [
-        ...previous,
-        { role: "ai", text: response.data.reply_text },
-      ]);
-      setRecommendations(response.data.items);
+      if (!response.ok) throw new Error("Failed to connect to stream");
+      if (!response.body) throw new Error("No response body");
+
+      setIsThinking(false);
+      setIsTalking(true);
+
+      // Add a placeholder AI message
+      setMessages((prev) => [...prev, { role: "ai", text: "" }]);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === "data: [DONE]") continue;
+
+          if (trimmed.startsWith("data: ")) {
+            try {
+              const chunk = JSON.parse(trimmed.slice(6));
+
+              if (chunk.type === "text") {
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  const lastIndex = updated.length - 1;
+                  if (lastIndex >= 0 && updated[lastIndex].role === "ai") {
+                    // Immutable update: create new object for the last message
+                    updated[lastIndex] = {
+                      ...updated[lastIndex],
+                      text: updated[lastIndex].text + chunk.text,
+                    };
+                  }
+                  return updated;
+                });
+                chatEndRef.current?.scrollIntoView({ behavior: "auto" });
+              } else if (chunk.type === "final") {
+                setRecommendations(chunk.data.items);
+                if (chunk.data.reply_text) {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === "ai") {
+                      last.text = chunk.data.reply_text;
+                    }
+                    return updated;
+                  });
+                }
+              } else if (chunk.type === "error") {
+                throw new Error(chunk.message);
+              }
+            } catch (e) {
+              console.error("Chunk parse error:", e);
+            }
+          }
+        }
+      }
     } catch (error) {
+      console.error("AI Chat Error:", error);
+      const isFetchError = error instanceof TypeError && error.message.includes("fetch");
       setMessages((previous) => [
         ...previous,
         {
           role: "ai",
-          text: error instanceof Error ? error.message : "推荐接口暂时不可用。",
+          text: isFetchError 
+            ? "糟了，西小电暂时连不上大脑（后端服务未启动或网络错误）。请确保你已经运行了 `npm run server` 哦！"
+            : (error instanceof Error ? error.message : "推荐接口暂时不可用。"),
         },
       ]);
     } finally {
       setIsThinking(false);
+      setIsTalking(false);
       setTimeout(
         () => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }),
         120,
@@ -1494,38 +1839,10 @@ const XiaoDFloatingChat = ({
 
   return (
     <>
-      <AnimatePresence>
-        {!isAiOpen && (
-          <motion.button
-            key="fab"
-            initial={{ opacity: 0, scale: 0.6, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.5, y: 20 }}
-            whileHover={{ scale: 1.1, y: -3 }}
-            whileTap={{ scale: 0.93 }}
-            transition={{ type: "spring", stiffness: 350, damping: 22 }}
-            onClick={() => setIsAiOpen(true)}
-            className="fixed bottom-24 md:bottom-8 right-5 md:right-8 z-50 w-[68px] h-[68px] rounded-full bg-white shadow-2xl shadow-blue-300/50 border-2 border-blue-100 flex items-center justify-center"
-            title="和西小电聊聊"
-          >
-            <XiaoDIcon size={52} />
-            <motion.div
-              animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut" }}
-              className="absolute inset-0 rounded-full bg-blue-400/20"
-            />
-            <motion.div
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 1.5 }}
-              className="absolute -top-1 -left-16 bg-stone-800 text-white text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-lg whitespace-nowrap"
-            >
-              问我吃什么 ✨
-              <span className="absolute -right-1 top-1/2 -translate-y-1/2 border-4 border-transparent border-l-stone-800" />
-            </motion.div>
-          </motion.button>
-        )}
-      </AnimatePresence>
+      <AIMagicIsland 
+        onOpen={() => setIsAiOpen(true)} 
+        isHidden={isAiOpen} 
+      />
 
       <AnimatePresence>
         {isAiOpen && (
@@ -1574,14 +1891,15 @@ const XiaoDFloatingChat = ({
                 damping: 26,
                 mass: 0.9,
               }}
-              className="fixed inset-x-3 bottom-3 md:right-6 md:left-auto md:w-[400px] z-50 overflow-hidden flex flex-col"
+              className="fixed inset-x-3 bottom-0 md:right-6 md:left-auto md:w-[400px] z-50 overflow-hidden flex flex-col mb-[calc(env(safe-area-inset-bottom,12px)+88px)] md:mb-[env(safe-area-inset-bottom,12px)]"
               style={{
                 top: "max(env(safe-area-inset-top, 12px), 12px)",
-                maxHeight: "calc(100vh - 24px)",
+                maxHeight: "calc(100vh - env(safe-area-inset-bottom, 12px) - 110px)",
                 background:
                   "linear-gradient(160deg, #0d1b2e 0%, #0a2240 40%, #0e1f38 100%)",
                 boxShadow:
                   "0 32px 80px rgba(0,30,80,0.6), 0 0 0 1px rgba(80,160,255,0.15) inset",
+                willChange: "transform, opacity",
               }}
             >
               <motion.div
@@ -1628,7 +1946,9 @@ const XiaoDFloatingChat = ({
                   }}
                 />
                 <div className="absolute inset-0 w-full h-full flex items-center justify-center">
-                  <XiaoD mode={robotMode} />
+                  <ErrorBoundary>
+                    <XiaoD mode={robotMode} />
+                  </ErrorBoundary>
                 </div>
 
                 <motion.div
@@ -1689,73 +2009,112 @@ const XiaoDFloatingChat = ({
                     </div>
                   </motion.div>
                 ) : (
-                  messages.map((message, index) => (
-                    <motion.div
-                      key={`${message.role}-${index}`}
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 300,
-                        damping: 24,
-                      }}
-                      className={`flex ${message.role === "user" ? "justify-end" : "justify-start gap-2"}`}
-                    >
-                      {message.role === "ai" && (
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 shrink-0 flex items-center justify-center text-white font-black text-[10px] shadow-md mt-0.5">
-                          D
-                        </div>
-                      )}
-                      <div
-                        className={cn(
-                          "max-w-[78%] text-[13.5px] leading-relaxed px-3.5 py-2.5 rounded-2xl",
-                          message.role === "user"
-                            ? "bg-blue-500 text-white rounded-br-sm shadow-md"
-                            : "bg-white/12 text-blue-50 rounded-bl-sm border border-white/10",
+                  messages.map((message, index) => {
+                    const isLast = index === messages.length - 1;
+                    const showRecommendations = isLast && message.role === "ai" && recommendations.length > 0;
+                    
+                    return (
+                      <div key={`${message.role}-${index}`} className="space-y-4">
+                        {showRecommendations && (
+                          <motion.div 
+                            initial="hidden"
+                            animate="show"
+                            variants={{
+                              hidden: { opacity: 0 },
+                              show: {
+                                opacity: 1,
+                                transition: { staggerChildren: 0.08, delayChildren: 0.1 }
+                              }
+                            }}
+                            className="space-y-2 pt-2"
+                          >
+                            <motion.div 
+                              variants={{
+                                hidden: { opacity: 0, x: -5 },
+                                show: { opacity: 1, x: 0 }
+                              }}
+                              className="text-[12px] uppercase tracking-widest text-blue-200/60 ml-1"
+                            >
+                              为你精选
+                            </motion.div>
+                            {recommendations.map(({ item, matched_reasons }) => {
+                              const fullItem =
+                                menus.find((m) => m.id === item.id) || item;
+                              return (
+                                <motion.button
+                                  key={item.id}
+                                  variants={{
+                                    hidden: { opacity: 0, y: 12, scale: 0.96 },
+                                    show: { 
+                                      opacity: 1, 
+                                      y: 0, 
+                                      scale: 1,
+                                      transition: {
+                                        type: "spring",
+                                        stiffness: 300,
+                                        damping: 22
+                                      }
+                                    }
+                                  }}
+                                  whileHover={{ scale: 1.02, backgroundColor: "rgba(255, 255, 255, 0.15)" }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => {
+                                    onPickItem(fullItem);
+                                    setIsAiOpen(false);
+                                  }}
+                                  style={{ willChange: "transform, opacity" }}
+                                  className="w-full text-left bg-white/10 border border-white/10 rounded-2xl px-4 py-3 transition-colors shadow-lg"
+                                >
+                                  <div className="flex items-center justify-between gap-3 mb-1">
+                                    <span className="text-white font-medium line-clamp-1">
+                                      {item.title}
+                                    </span>
+                                    <span className="text-blue-200 text-sm">
+                                      ¥{item.price.toFixed(1)}
+                                    </span>
+                                  </div>
+                                  <div className="text-blue-100/70 text-[12px] line-clamp-1">
+                                    {item.location_text} · {item.shop_text}
+                                  </div>
+                                  <div className="text-blue-100/70 text-[12px] mt-1 line-clamp-1">
+                                    {matched_reasons.length
+                                      ? matched_reasons.join(" / ")
+                                      : item.badge}
+                                  </div>
+                                </motion.button>
+                              );
+                            })}
+                          </motion.div>
                         )}
-                      >
-                        {message.text}
-                      </div>
-                    </motion.div>
-                  ))
-                )}
-                {recommendations.length > 0 && (
-                  <div className="space-y-2 pt-2">
-                    <div className="text-[12px] uppercase tracking-widest text-blue-200/60">
-                      Top Picks
-                    </div>
-                    {recommendations.map(({ item, matched_reasons }) => {
-                      const fullItem =
-                        menus.find((menu) => menu.id === item.id) || item;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => {
-                            onPickItem(fullItem);
-                            setIsAiOpen(false);
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 300,
+                            damping: 24,
                           }}
-                          className="w-full text-left bg-white/10 hover:bg-white/15 border border-white/10 rounded-2xl px-4 py-3 transition-colors"
+                          className={`flex ${message.role === "user" ? "justify-end" : "justify-start gap-2"}`}
                         >
-                          <div className="flex items-center justify-between gap-3 mb-1">
-                            <span className="text-white font-medium line-clamp-1">
-                              {item.title}
-                            </span>
-                            <span className="text-blue-200 text-sm">
-                              ¥{item.price.toFixed(1)}
-                            </span>
+                          {message.role === "ai" && (
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 shrink-0 flex items-center justify-center text-white font-black text-[10px] shadow-md mt-0.5">
+                              D
+                            </div>
+                          )}
+                          <div
+                            className={cn(
+                              "max-w-[78%] text-[13.5px] leading-relaxed px-3.5 py-2.5 rounded-2xl",
+                              message.role === "user"
+                                ? "bg-blue-500 text-white rounded-br-sm shadow-md"
+                                : "bg-white/12 text-blue-50 rounded-bl-sm border border-white/10",
+                            )}
+                          >
+                            {message.text}
                           </div>
-                          <div className="text-blue-100/70 text-[12px] line-clamp-1">
-                            {item.location_text} · {item.shop_text}
-                          </div>
-                          <div className="text-blue-100/70 text-[12px] mt-1 line-clamp-1">
-                            {matched_reasons.length
-                              ? matched_reasons.join(" / ")
-                              : item.badge}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                        </motion.div>
+                      </div>
+                    );
+                  })
                 )}
                 <div ref={chatEndRef} />
               </motion.div>
@@ -1805,7 +2164,7 @@ const XiaoDFloatingChat = ({
       </AnimatePresence>
     </>
   );
-};
+});
 
 export default function App() {
   const [menuCache, setMenuCache] = useState<MenuItem[]>([]);
@@ -1828,6 +2187,7 @@ export default function App() {
   const [favorites, setFavorites] = useAtom(favoritesAtom);
   const [searchQuery] = useAtom(searchQueryAtom);
   const [isAiMode] = useAtom(isAiModeAtom);
+  const [filters] = useAtom(filtersAtom);
 
   const discoverSeedRef = useRef(generateSessionSeed());
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -1844,7 +2204,12 @@ export default function App() {
   const isLoadingRef = useRef(isLoading);
   const isLoadingMoreRef = useRef(isLoadingMore);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
-  const isSearchMode = Boolean(deferredSearchQuery);
+  const isSearchMode =
+    Boolean(deferredSearchQuery) ||
+    filters.canteen !== "all" ||
+    filters.maxPrice !== null ||
+    filters.maxCalories !== null ||
+    filters.minHealth !== null;
 
   discoverPageRef.current = discoverPage;
   isLoadingRef.current = isLoading;
@@ -1895,28 +2260,72 @@ export default function App() {
     }
   }, [fullMenuCatalog, isCatalogReady]);
 
+  // Session ID Management
   useEffect(() => {
-    const saved = window.localStorage.getItem("xd-food-favorites");
-    if (!saved) {
-      return;
+    let sid = window.localStorage.getItem("xd-food-session-id");
+    if (!sid) {
+      sid = `sid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      window.localStorage.setItem("xd-food-session-id", sid);
     }
+  }, []);
 
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        setFavorites(
-          parsed.filter((value): value is string => typeof value === "string"),
-        );
-      } else {
-        window.localStorage.removeItem("xd-food-favorites");
+  const getSessionHeaders = () => {
+    const sid = window.localStorage.getItem("xd-food-session-id") || "anonymous";
+    return {
+      "Content-Type": "application/json",
+      "X-Session-ID": sid,
+    };
+  };
+
+  useEffect(() => {
+    const syncFavorites = async () => {
+      try {
+        const sid = window.localStorage.getItem("xd-food-session-id");
+        if (!sid) return;
+
+        const response = await fetch("/api/favorites", {
+          headers: { "X-Session-ID": sid }
+        });
+        const data = await response.json();
+        if (data.success && Array.isArray(data.data)) {
+          setFavorites(data.data);
+        } else {
+          // Fallback
+          const saved = window.localStorage.getItem("xd-food-favorites");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              setFavorites(parsed.filter((v): v is string => typeof v === "string"));
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to sync favorites from backend:", error);
       }
-    } catch {
-      window.localStorage.removeItem("xd-food-favorites");
-    }
+    };
+    syncFavorites();
   }, [setFavorites]);
 
   useEffect(() => {
     window.localStorage.setItem("xd-food-favorites", JSON.stringify(favorites));
+    
+    // Sync to backend
+    const timeoutId = setTimeout(async () => {
+      const sid = window.localStorage.getItem("xd-food-session-id");
+      if (!sid) return;
+
+      try {
+        await fetch("/api/favorites", {
+          method: "POST",
+          headers: getSessionHeaders(),
+          body: JSON.stringify({ favorites }),
+        });
+      } catch (error) {
+        console.error("Failed to save favorites to backend:", error);
+      }
+    }, 1000); // Debounce
+    
+    return () => clearTimeout(timeoutId);
   }, [favorites]);
 
   useEffect(() => {
@@ -1959,7 +2368,13 @@ export default function App() {
     prefetchedPageRef.current = null;
     prefetchingPageRef.current = null;
     observerRequestedPageRef.current = null;
-  }, [deferredSearchQuery]);
+  }, [
+    deferredSearchQuery,
+    filters.canteen,
+    filters.maxPrice,
+    filters.maxCalories,
+    filters.minHealth,
+  ]);
 
   useEffect(() => {
     if (!isSearchMode) {
@@ -1983,9 +2398,10 @@ export default function App() {
           return;
         }
 
-        const filteredItems = filterMenusByKeyword(
+        const filteredItems = filterItems(
           sourceItems,
           deferredSearchQuery,
+          filters
         );
         const renderCount = discoverPage * DISCOVER_PAGE_SIZE;
 
@@ -2019,6 +2435,7 @@ export default function App() {
     fullMenuCatalog,
     isCatalogReady,
     isSearchMode,
+    filters,
   ]);
 
   useEffect(() => {
@@ -2244,7 +2661,7 @@ export default function App() {
     };
   }, [currentView, hasMoreDiscover, isLoading, isLoadingMore]);
 
-  async function openDetail(id: string) {
+  const openDetail = useCallback(async (id: string) => {
     const cachedItem = menuCache.find((item) => item.id === id) || null;
 
     setExpandedItem(null);
@@ -2264,7 +2681,7 @@ export default function App() {
         );
       }
     }
-  }
+  }, [menuCache]);
 
   const displayedData =
     currentView === "discover" ? discoverItems : favoriteItems;
@@ -2290,6 +2707,7 @@ export default function App() {
                 transition={{ duration: 0.3 }}
               >
                 <Hero menuCount={catalogCount} />
+                <FilterSection />
                 <motion.section
                   className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10"
                   animate={{
@@ -2332,35 +2750,36 @@ export default function App() {
                       {displayedData.map((item, index) => (
                         <motion.div
                           key={item.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
+                          variants={ANIM_VARIANTS.fadeInUp}
+                          initial="initial"
+                          animate="animate"
+                          exit="exit"
                           transition={{
-                            duration: 0.5,
-                            delay:
-                              index < DISCOVER_PAGE_SIZE ? index * 0.03 : 0,
+                            ...ANIM_VARIANTS.fadeInUp.transition,
+                            delay: index < (typeof DISCOVER_PAGE_SIZE === 'number' ? DISCOVER_PAGE_SIZE : 20) ? index * 0.03 : 0,
                             ease: "easeOut",
-                          }}
+                          } as any}
                         >
-                          <FoodCard
-                            item={item}
-                            onClick={() => void openDetail(item.id)}
-                          />
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
-                  {!errorMessage && !isLoading && displayedData.length > 0 && (
-                    <div className="flex flex-col items-center gap-4 pt-10">
-                      {hasMoreDiscover ? (
-                        <button
-                          onClick={() =>
-                            setDiscoverPage((previous) => previous + 1)
-                          }
-                          disabled={isLoadingMore}
-                          className="px-5 py-2.5 rounded-full bg-white border border-stone-200 text-stone-700 shadow-sm hover:bg-stone-50 transition-colors disabled:opacity-60"
-                        >
-                          {isLoadingMore ? "加载中..." : "加载更多菜品"}
-                        </button>
+                           <FoodCard
+                             item={item}
+                             onClick={openDetail}
+                           />
+                         </motion.div>
+                       ))}
+                     </div>
+                   )}
+                   {!errorMessage && !isLoading && displayedData.length > 0 && (
+                     <div className="flex flex-col items-center gap-4 pt-10 pb-[max(env(safe-area-inset-bottom),40px)]">
+                       {hasMoreDiscover ? (
+                         <button
+                           onClick={() =>
+                             setDiscoverPage((previous) => previous + 1)
+                           }
+                           disabled={isLoadingMore}
+                           className="px-6 py-3 rounded-full bg-white border border-stone-200 text-stone-700 shadow-sm md:hover:bg-stone-50 active:bg-stone-100 transition-colors disabled:opacity-60 active:scale-95"
+                         >
+                           {isLoadingMore ? "加载中..." : "加载更多菜品"}
+                         </button>
                       ) : (
                         <p className="text-sm text-stone-400">
                           这一轮推荐已经看完了
@@ -2419,7 +2838,7 @@ export default function App() {
                       >
                         <FoodCard
                           item={item}
-                          onClick={() => void openDetail(item.id)}
+                          onClick={openDetail}
                         />
                       </motion.div>
                     ))}
