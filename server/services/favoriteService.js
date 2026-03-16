@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { PROJECT_ROOT } from "../config.js";
+import { PROJECT_ROOT, IS_VERCEL } from "../config.js";
 
 const FAVORITES_FILE = path.join(PROJECT_ROOT, "server", "data", "favorites.json");
 
@@ -18,6 +18,7 @@ async function readData() {
 }
 
 async function writeData(data) {
+  if (IS_VERCEL) return; // Skip writing on Vercel
   await fs.writeFile(FAVORITES_FILE, JSON.stringify(data, null, 2), "utf8");
 }
 
