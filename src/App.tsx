@@ -52,19 +52,19 @@ const ANIM_VARIANTS = {
     initial: { opacity: 0, y: 12 },
     animate: { opacity: 1, y: 0 },
     exit: { opacity: 0, y: 10 },
-    transition: { type: "spring", stiffness: 260, damping: 24 }
+    transition: { type: "spring", stiffness: 260, damping: 24 },
   },
   fadeInScale: {
     initial: { opacity: 0, scale: 0.95 },
     animate: { opacity: 1, scale: 1 },
     exit: { opacity: 0, scale: 0.95 },
-    transition: { type: "spring", stiffness: 300, damping: 25 }
+    transition: { type: "spring", stiffness: 300, damping: 25 },
   },
   stagger: {
     animate: {
-      transition: { staggerChildren: 0.08, delayChildren: 0.1 }
-    }
-  }
+      transition: { staggerChildren: 0.08, delayChildren: 0.1 },
+    },
+  },
 };
 
 type FilterState = {
@@ -354,7 +354,7 @@ async function fetchJson<T>(
 ): Promise<T> {
   const response = await fetch(input, init);
   const contentType = response.headers.get("content-type");
-  
+
   if (!contentType || !contentType.includes("application/json")) {
     throw new Error(`服务器响应异常 (${response.status})`);
   }
@@ -373,6 +373,10 @@ function generateSessionSeed() {
 function mergeMenus(existing: MenuItem[], incoming: MenuItem[]) {
   const merged = new Map(existing.map((item) => [item.id, item]));
 
+  if (!Array.isArray(incoming)) {
+    return [...merged.values()];
+  }
+
   incoming.forEach((item) => {
     merged.set(item.id, item);
   });
@@ -380,11 +384,7 @@ function mergeMenus(existing: MenuItem[], incoming: MenuItem[]) {
   return [...merged.values()];
 }
 
-function filterItems(
-  items: MenuItem[],
-  keyword: string,
-  filters: FilterState,
-) {
+function filterItems(items: MenuItem[], keyword: string, filters: FilterState) {
   let filtered = items;
 
   // Keyword filter
@@ -411,7 +411,9 @@ function filterItems(
 
   // Price filter
   if (filters.maxPrice !== null) {
-    filtered = filtered.filter((item) => item.price <= (filters.maxPrice ?? 999));
+    filtered = filtered.filter(
+      (item) => item.price <= (filters.maxPrice ?? 999),
+    );
   }
 
   // Calories filter (estimated)
@@ -606,10 +608,13 @@ const FilterSection = React.memo(() => {
     <div className="max-w-4xl mx-auto px-4 mb-10">
       <div className="flex flex-col gap-5 p-6 bg-white/95 backdrop-blur-md md:backdrop-blur-2xl md:bg-white/50 rounded-[32px] border border-stone-200/40 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-500 md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.04)]">
         {filterGroups.map((group) => (
-          <div key={group.label} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
+          <div
+            key={group.label}
+            className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6"
+          >
             <div className="flex items-center gap-2 min-w-[64px]">
-               <div className="w-1 h-3.5 bg-orange-400/40 rounded-full" />
-               <span className="text-[12px] font-bold text-stone-400 uppercase tracking-[0.1em]">
+              <div className="w-1 h-3.5 bg-orange-400/40 rounded-full" />
+              <span className="text-[12px] font-bold text-stone-400 uppercase tracking-[0.1em]">
                 {group.label}
               </span>
             </div>
@@ -619,12 +624,14 @@ const FilterSection = React.memo(() => {
                 return (
                   <button
                     key={String(option.id)}
-                    onClick={() => setFilters({ ...filters, [group.key]: option.id })}
+                    onClick={() =>
+                      setFilters({ ...filters, [group.key]: option.id })
+                    }
                     className={cn(
                       "group relative px-4 py-1.5 rounded-full text-[13.5px] font-medium transition-all duration-300 active:scale-95",
                       isActive
                         ? "bg-stone-800 text-white shadow-md shadow-stone-800/15"
-                        : "bg-white/40 text-stone-500 border border-stone-100/50 md:hover:bg-stone-100 md:hover:text-stone-800 md:hover:border-stone-200 active:bg-stone-50 active:scale-95"
+                        : "bg-white/40 text-stone-500 border border-stone-100/50 md:hover:bg-stone-100 md:hover:text-stone-800 md:hover:border-stone-200 active:bg-stone-50 active:scale-95",
                     )}
                   >
                     {option.label}
@@ -632,7 +639,11 @@ const FilterSection = React.memo(() => {
                       <motion.div
                         layoutId={`active-pill-${group.label}`}
                         className="absolute inset-0 rounded-full ring-2 ring-stone-800/10 pointer-events-none"
-                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                        transition={{
+                          type: "spring",
+                          bounce: 0.2,
+                          duration: 0.6,
+                        }}
                       />
                     )}
                   </button>
@@ -743,7 +754,9 @@ const Hero = React.memo(({ menuCount }: { menuCount: number }) => {
         initial="initial"
         animate="animate"
         exit="exit"
-        transition={{ ...ANIM_VARIANTS.fadeInScale.transition, delay: 0.2 } as any}
+        transition={
+          { ...ANIM_VARIANTS.fadeInScale.transition, delay: 0.2 } as any
+        }
         className="relative max-w-xl mx-auto group/search"
       >
         <div className="flex items-center bg-white/95 backdrop-blur-md md:backdrop-blur-2xl md:bg-white/70 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] ring-1 ring-stone-900/5 md:hover:ring-stone-900/10 focus-within:ring-stone-900/15 focus-within:bg-white/90 focus-within:shadow-lg transition-all duration-300 px-5 py-3.5">
@@ -786,155 +799,359 @@ const Hero = React.memo(({ menuCount }: { menuCount: number }) => {
   );
 });
 
-const FoodCard = React.memo(({
-  item,
-  onClick,
-}: {
-  item: MenuItem;
-  onClick: (id: string) => void;
-}) => {
-  const [favorites, setFavorites] = useAtom(favoritesAtom);
-  const isFavorite = favorites.includes(item.id);
-  const satietyLabel = getSatietyLabel(item);
+const FoodCard = React.memo(
+  ({ item, onClick }: { item: MenuItem; onClick: (id: string) => void }) => {
+    const [favorites, setFavorites] = useAtom(favoritesAtom);
+    const isFavorite = favorites.includes(item.id);
+    const satietyLabel = getSatietyLabel(item);
 
-  const toggleFavorite = (event: React.MouseEvent) => {
-    event.stopPropagation();
-    setFavorites(
-      isFavorite
-        ? favorites.filter((id) => id !== item.id)
-        : [...favorites, item.id],
+    const toggleFavorite = (event: React.MouseEvent) => {
+      event.stopPropagation();
+      setFavorites(
+        isFavorite
+          ? favorites.filter((id) => id !== item.id)
+          : [...favorites, item.id],
+      );
+    };
+
+    return (
+      <motion.div
+        variants={ANIM_VARIANTS.fadeInScale}
+        initial="initial"
+        animate="animate"
+        whileHover={{ y: -8, scale: 1.02 }}
+        transition={
+          {
+            ...ANIM_VARIANTS.fadeInScale.transition,
+            type: "spring",
+            stiffness: 300,
+            damping: 25,
+          } as any
+        }
+        onClick={() => onClick(item.id)}
+        style={{ willChange: "transform, opacity" }}
+        className="bg-white/95 md:bg-white/90 backdrop-blur-md md:backdrop-blur-xl rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)] md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] cursor-pointer flex flex-col group relative ring-1 ring-stone-900/5 md:hover:ring-stone-900/10 transition-all duration-300 active:scale-[0.98]"
+      >
+        <div className="relative h-48 sm:h-56 overflow-hidden">
+          <motion.img
+            src={getImageUrl(item.image_key)}
+            alt={item.title}
+            loading="lazy"
+            decoding="async"
+            whileHover={{ scale: 1.05 }}
+            transition={{ duration: 0.7, ease: [0.33, 1, 0.68, 1] }}
+            className="w-full h-full object-cover origin-center"
+          />
+          <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full text-[13px] font-medium text-stone-700 shadow-sm flex items-center gap-1.5 z-10">
+            <Utensils className="w-3.5 h-3.5 text-orange-500" strokeWidth={2} />
+            {satietyLabel}
+          </div>
+          <button
+            onClick={toggleFavorite}
+            className="absolute top-4 right-4 p-3 rounded-full bg-white/80 backdrop-blur-md shadow-sm z-10 md:hover:scale-110 active:scale-95 transition-transform"
+          >
+            <Heart
+              className={cn(
+                "w-4 h-4 transition-colors",
+                isFavorite ? "text-rose-500 fill-rose-500" : "text-stone-500",
+              )}
+              strokeWidth={isFavorite ? 2 : 1.5}
+            />
+          </button>
+        </div>
+        <div className="p-5 flex flex-col flex-grow bg-white">
+          <div className="flex justify-between items-start mb-2.5 gap-3">
+            <h3 className="text-[19px] font-semibold text-stone-800 tracking-tight line-clamp-1">
+              {item.title}
+            </h3>
+            <span className="text-lg font-medium text-stone-800 whitespace-nowrap">
+              ¥{item.price.toFixed(1)}
+            </span>
+          </div>
+          <div className="flex items-center text-[14px] text-stone-500 mt-auto">
+            <MapPin
+              className="w-4 h-4 mr-1.5 flex-shrink-0 text-stone-400"
+              strokeWidth={1.5}
+            />
+            <span className="truncate">{item.location_text}</span>
+          </div>
+        </div>
+      </motion.div>
     );
-  };
+  },
+);
 
-  return (
-    <motion.div
-      variants={ANIM_VARIANTS.fadeInScale}
-      initial="initial"
-      animate="animate"
-      whileHover={{ y: -8, scale: 1.02 }}
-      transition={{ 
-        ...ANIM_VARIANTS.fadeInScale.transition,
-        type: "spring",
-        stiffness: 300,
-        damping: 25 
-      } as any}
-      onClick={() => onClick(item.id)}
-      style={{ willChange: "transform, opacity" }}
-      className="bg-white/95 md:bg-white/90 backdrop-blur-md md:backdrop-blur-xl rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)] md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] cursor-pointer flex flex-col group relative ring-1 ring-stone-900/5 md:hover:ring-stone-900/10 transition-all duration-300 active:scale-[0.98]"
-    >
-      <div className="relative h-48 sm:h-56 overflow-hidden">
-        <motion.img
-          src={getImageUrl(item.image_key)}
-          alt={item.title}
-          loading="lazy"
-          decoding="async"
-          whileHover={{ scale: 1.05 }}
-          transition={{ duration: 0.7, ease: [0.33, 1, 0.68, 1] }}
-          className="w-full h-full object-cover origin-center"
-        />
-        <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full text-[13px] font-medium text-stone-700 shadow-sm flex items-center gap-1.5 z-10">
-          <Utensils className="w-3.5 h-3.5 text-orange-500" strokeWidth={2} />
-          {satietyLabel}
-        </div>
-        <button
-          onClick={toggleFavorite}
-          className="absolute top-4 right-4 p-3 rounded-full bg-white/80 backdrop-blur-md shadow-sm z-10 md:hover:scale-110 active:scale-95 transition-transform"
-        >
-          <Heart
-            className={cn(
-              "w-4 h-4 transition-colors",
-              isFavorite ? "text-rose-500 fill-rose-500" : "text-stone-500",
-            )}
-            strokeWidth={isFavorite ? 2 : 1.5}
-          />
-        </button>
-      </div>
-      <div className="p-5 flex flex-col flex-grow bg-white">
-        <div className="flex justify-between items-start mb-2.5 gap-3">
-          <h3 className="text-[19px] font-semibold text-stone-800 tracking-tight line-clamp-1">
-            {item.title}
-          </h3>
-          <span className="text-lg font-medium text-stone-800 whitespace-nowrap">
-            ¥{item.price.toFixed(1)}
-          </span>
-        </div>
-        <div className="flex items-center text-[14px] text-stone-500 mt-auto">
-          <MapPin
-            className="w-4 h-4 mr-1.5 flex-shrink-0 text-stone-400"
-            strokeWidth={1.5}
-          />
-          <span className="truncate">{item.location_text}</span>
-        </div>
-      </div>
-    </motion.div>
-  );
-});
+const DetailDrawer = React.memo(
+  ({
+    item,
+    isOpen,
+    onClose,
+    onExpand,
+  }: {
+    item: MenuItem | null;
+    isOpen: boolean;
+    onClose: () => void;
+    onExpand: (item: MenuItem) => void;
+  }) => {
+    const chartData = useMemo(() => {
+      if (!item) return [];
+      return [
+        {
+          subject: "味道",
+          A: normalizeRadarScore(item.radar?.taste),
+          fullMark: 100,
+        },
+        {
+          subject: "性价比",
+          A: normalizeRadarScore(item.radar?.value),
+          fullMark: 100,
+        },
+        {
+          subject: "饱腹感",
+          A: normalizeRadarScore(item.radar?.satiety),
+          fullMark: 100,
+        },
+        {
+          subject: "健康度",
+          A: normalizeRadarScore(item.radar?.health),
+          fullMark: 100,
+        },
+        {
+          subject: "出餐速度",
+          A: normalizeRadarScore(item.radar?.wait_time),
+          fullMark: 100,
+        },
+        {
+          subject: "颜值",
+          A: normalizeRadarScore(item.radar?.aesthetic),
+          fullMark: 100,
+        },
+      ];
+    }, [item]);
 
-const DetailDrawer = React.memo(({
-  item,
-  isOpen,
-  onClose,
-  onExpand,
-}: {
-  item: MenuItem | null;
-  isOpen: boolean;
-  onClose: () => void;
-  onExpand: (item: MenuItem) => void;
-}) => {
-  const chartData = useMemo(() => {
-    if (!item) return [];
-    return [
-      {
-        subject: "味道",
-        A: normalizeRadarScore(item.radar?.taste),
-        fullMark: 100,
-      },
-      {
-        subject: "性价比",
-        A: normalizeRadarScore(item.radar?.value),
-        fullMark: 100,
-      },
-      {
-        subject: "饱腹感",
-        A: normalizeRadarScore(item.radar?.satiety),
-        fullMark: 100,
-      },
-      {
-        subject: "健康度",
-        A: normalizeRadarScore(item.radar?.health),
-        fullMark: 100,
-      },
-      {
-        subject: "出餐速度",
-        A: normalizeRadarScore(item.radar?.wait_time),
-        fullMark: 100,
-      },
-      {
-        subject: "颜值",
-        A: normalizeRadarScore(item.radar?.aesthetic),
-        fullMark: 100,
-      },
-    ];
-  }, [item]);
+    return (
+      <AnimatePresence>
+        {isOpen && item && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              onClick={onClose}
+              className="fixed inset-0 bg-stone-900/10 backdrop-blur-sm z-50"
+            />
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{
+                x: "100%",
+                transition: { type: "tween", duration: 0.3, ease: "easeInOut" },
+              }}
+              transition={{
+                type: "spring",
+                damping: 30,
+                stiffness: 250,
+                mass: 0.8,
+              }}
+              className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-[#FDFDFD] shadow-2xl z-50 overflow-y-auto flex flex-col pb-[max(env(safe-area-inset-bottom),0px)]"
+            >
+              <div className="sticky top-0 z-10 bg-[#FDFDFD]/80 backdrop-blur-xl px-6 py-4 flex justify-between items-center">
+                <button
+                  onClick={onClose}
+                  className="p-3 -ml-2 rounded-full md:hover:bg-stone-100 active:bg-stone-200 transition-colors text-stone-500 md:hover:text-stone-800 bg-white shadow-sm border border-stone-100"
+                >
+                  <X className="w-5 h-5" strokeWidth={1.5} />
+                </button>
+                <span className="text-sm font-medium text-stone-400 tracking-widest uppercase">
+                  Quick Glance
+                </span>
+                <div className="w-10" />
+              </div>
+              <div className="px-6 py-4 flex-grow">
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1, duration: 0.4 }}
+                  className="relative h-64 rounded-[28px] overflow-hidden mb-6 shadow-sm"
+                >
+                  <img
+                    src={getImageUrl(item.image_key)}
+                    alt={item.title}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-lg">
+                    <span className="text-xl font-bold text-stone-800 tracking-tight">
+                      ¥{item.price.toFixed(1)}
+                    </span>
+                  </div>
+                </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15, duration: 0.4 }}
+                  className="mb-8"
+                >
+                  <div className="inline-flex items-center px-3 py-1.5 bg-orange-50 text-orange-700 rounded-xl shadow-sm text-[13.5px] font-bold border border-orange-100/50 mb-3">
+                    <MapPin className="w-4 h-4 mr-1.5" strokeWidth={2} />
+                    {item.location_text} · {item.shop_text} · {item.stall_text}
+                  </div>
 
-  return (
-    <AnimatePresence>
-      {isOpen && item && (
-        <>
+                  <h2 className="text-[28px] font-bold text-stone-800 mb-4 tracking-tight font-serif leading-tight">
+                    {item.title}
+                  </h2>
+
+                  <div className="flex items-center px-3 py-1.5 bg-white rounded-xl shadow-sm text-[13.5px] font-medium text-stone-600 border border-stone-100 w-fit">
+                    <Clock
+                      className="w-4 h-4 mr-1.5 text-stone-400"
+                      strokeWidth={1.5}
+                    />
+                    建议等待时间：{item.wait_time_text}
+                  </div>
+                </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 120,
+                    damping: 20,
+                    delay: 0.2,
+                  }}
+                  className="h-[220px] w-full -ml-3 mb-4 mix-blend-multiply"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart
+                      cx="50%"
+                      cy="50%"
+                      outerRadius="60%"
+                      data={chartData}
+                    >
+                      <PolarGrid stroke="#f5f5f4" strokeWidth={1} />
+                      <PolarAngleAxis
+                        dataKey="subject"
+                        tick={{ fill: "#a8a29e", fontSize: 12 }}
+                      />
+                      <PolarRadiusAxis
+                        domain={[0, 100]}
+                        tick={false}
+                        axisLine={false}
+                      />
+                      <Radar
+                        name="Metrics"
+                        dataKey="A"
+                        stroke="#7dd3fc"
+                        strokeWidth={1.5}
+                        fill="#bae6fd"
+                        fillOpacity={0.4}
+                        isAnimationActive={true}
+                        animationDuration={1500}
+                      />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </motion.div>
+                <p className="text-[14px] text-stone-500 text-center px-4 leading-relaxed font-light italic">
+                  "{item.ai_insight}"
+                </p>
+              </div>
+              <div className="p-6 bg-gradient-to-t from-[#FDFDFD] via-[#FDFDFD] to-transparent pt-10 sticky bottom-0">
+                <button
+                  onClick={() => onExpand(item)}
+                  className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 text-white rounded-[20px] py-4 font-medium transition-transform active:scale-95 shadow-xl shadow-stone-800/20"
+                >
+                  <Sparkles
+                    className="w-4 h-4 text-amber-300"
+                    strokeWidth={2}
+                  />
+                  查看完整数据分析和评价
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    );
+  },
+);
+
+const FullScreenDetail = React.memo(
+  ({
+    item,
+    isOpen,
+    onClose,
+  }: {
+    item: MenuItem | null;
+    isOpen: boolean;
+    onClose: () => void;
+  }) => {
+    const [favorites, setFavorites] = useAtom(favoritesAtom);
+    const isFavorite = item ? favorites.includes(item.id) : false;
+
+    const chartData = useMemo(() => {
+      if (!item) return [];
+      return [
+        {
+          subject: "味道",
+          A: normalizeRadarScore(item.radar?.taste),
+          fullMark: 100,
+        },
+        {
+          subject: "性价比",
+          A: normalizeRadarScore(item.radar?.value),
+          fullMark: 100,
+        },
+        {
+          subject: "饱腹感",
+          A: normalizeRadarScore(item.radar?.satiety),
+          fullMark: 100,
+        },
+        {
+          subject: "健康度",
+          A: normalizeRadarScore(item.radar?.health),
+          fullMark: 100,
+        },
+        {
+          subject: "出餐速度",
+          A: normalizeRadarScore(item.radar?.wait_time),
+          fullMark: 100,
+        },
+        {
+          subject: "颜值",
+          A: normalizeRadarScore(item.radar?.aesthetic),
+          fullMark: 100,
+        },
+      ];
+    }, [item]);
+
+    const toggleFavorite = useCallback(() => {
+      if (!item) return;
+      setFavorites((previous) =>
+        previous.includes(item.id)
+          ? previous.filter((fav) => fav !== item.id)
+          : [...previous, item.id],
+      );
+    }, [item, setFavorites]);
+
+    if (!item) {
+      return null;
+    }
+
+    const macroEstimate = buildMacroEstimate(item);
+    const crowdTrend = buildCrowdTrend(item);
+    const referenceCards = buildReferenceCards(item);
+
+    return (
+      <AnimatePresence>
+        {isOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-stone-900/10 backdrop-blur-sm z-50"
-          />
-          <motion.div
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
+            initial={{ y: "100%", opacity: 0.5 }}
+            animate={{ y: 0, opacity: 1 }}
             exit={{
-              x: "100%",
-              transition: { type: "tween", duration: 0.3, ease: "easeInOut" },
+              y: "100%",
+              opacity: 0,
+              transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] },
             }}
             transition={{
               type: "spring",
@@ -942,26 +1159,36 @@ const DetailDrawer = React.memo(({
               stiffness: 250,
               mass: 0.8,
             }}
-            className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-[#FDFDFD] shadow-2xl z-50 overflow-y-auto flex flex-col pb-[max(env(safe-area-inset-bottom),0px)]"
+            className="fixed inset-0 bg-[#FDFDFD] z-[60] overflow-y-auto overflow-x-hidden pb-32"
           >
-            <div className="sticky top-0 z-10 bg-[#FDFDFD]/80 backdrop-blur-xl px-6 py-4 flex justify-between items-center">
+            <div className="sticky top-0 z-20 w-full px-6 py-4 flex justify-between items-center bg-gradient-to-b from-[#FDFDFD]/90 to-transparent backdrop-blur-[2px]">
               <button
                 onClick={onClose}
-                className="p-3 -ml-2 rounded-full md:hover:bg-stone-100 active:bg-stone-200 transition-colors text-stone-500 md:hover:text-stone-800 bg-white shadow-sm border border-stone-100"
+                className="p-4 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 md:hover:bg-stone-50 active:bg-stone-100 transition-colors text-stone-600 focus:outline-none"
               >
-                <X className="w-5 h-5" strokeWidth={1.5} />
+                <X className="w-6 h-6" strokeWidth={1.5} />
               </button>
-              <span className="text-sm font-medium text-stone-400 tracking-widest uppercase">
-                Quick Glance
-              </span>
-              <div className="w-10" />
+              <button
+                onClick={toggleFavorite}
+                className="p-4 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 md:hover:bg-rose-50 active:bg-rose-100 transition-all text-stone-600 md:hover:scale-105 active:scale-95 focus:outline-none"
+              >
+                <Heart
+                  className={cn(
+                    "w-6 h-6 transition-colors duration-300",
+                    isFavorite
+                      ? "text-rose-500 fill-rose-500 scale-110"
+                      : "hover:text-rose-500",
+                  )}
+                  strokeWidth={isFavorite ? 2 : 1.5}
+                />
+              </button>
             </div>
-            <div className="px-6 py-4 flex-grow">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-20">
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.4 }}
-                className="relative h-64 rounded-[28px] overflow-hidden mb-6 shadow-sm"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.15, duration: 0.6, ease: "easeOut" }}
+                className="relative h-[400px] rounded-[40px] overflow-hidden shadow-2xl shadow-stone-200/50 mb-10 mt-6"
               >
                 <img
                   src={getImageUrl(item.image_key)}
@@ -970,561 +1197,363 @@ const DetailDrawer = React.memo(({
                   decoding="async"
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-lg">
-                  <span className="text-xl font-bold text-stone-800 tracking-tight">
-                    ¥{item.price.toFixed(1)}
-                  </span>
-                </div>
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15, duration: 0.4 }}
-                className="mb-8"
-              >
-                <div className="inline-flex items-center px-3 py-1.5 bg-orange-50 text-orange-700 rounded-xl shadow-sm text-[13.5px] font-bold border border-orange-100/50 mb-3">
-                  <MapPin className="w-4 h-4 mr-1.5" strokeWidth={2} />
-                  {item.location_text} · {item.shop_text} · {item.stall_text}
-                </div>
-                
-                <h2 className="text-[28px] font-bold text-stone-800 mb-4 tracking-tight font-serif leading-tight">
-                  {item.title}
-                </h2>
+                <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 via-stone-900/10 to-transparent" />
+                <div className="absolute bottom-8 left-8 right-8">
+                  <div className="flex justify-between items-end gap-6">
+                    <div className="flex-1">
+                      <div className="inline-flex items-center px-4 py-2 bg-orange-500/90 backdrop-blur-md rounded-2xl text-[14px] font-bold text-white border border-orange-400/30 mb-4 shadow-lg">
+                        <MapPin className="w-4 h-4 mr-2" strokeWidth={2.5} />
+                        {item.location_text} · {item.shop_text} ·{" "}
+                        {item.stall_text}
+                      </div>
 
-                <div className="flex items-center px-3 py-1.5 bg-white rounded-xl shadow-sm text-[13.5px] font-medium text-stone-600 border border-stone-100 w-fit">
-                  <Clock
-                    className="w-4 h-4 mr-1.5 text-stone-400"
-                    strokeWidth={1.5}
-                  />
-                  建议等待时间：{item.wait_time_text}
+                      <h1 className="text-4xl sm:text-5xl font-bold text-white mb-6 tracking-tight font-serif drop-shadow-md leading-tight">
+                        {item.title}
+                      </h1>
+
+                      <div className="flex items-center px-4 py-2 bg-white/10 backdrop-blur-md rounded-2xl text-[13px] font-medium text-white border border-white/10 w-fit">
+                        <Clock
+                          className="w-3.5 h-3.5 mr-2 opacity-80"
+                          strokeWidth={1.5}
+                        />
+                        高峰预计等待：{item.wait_time_text}
+                      </div>
+                    </div>
+
+                    <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-3xl shadow-xl border border-white/20 transform translate-y-2">
+                      <span className="text-3xl font-bold text-stone-800 tracking-tight">
+                        ¥{item.price.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{
-                  type: "spring",
-                  stiffness: 120,
-                  damping: 20,
-                  delay: 0.2,
-                }}
-                className="h-[220px] w-full -ml-3 mb-4 mix-blend-multiply"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart
-                    cx="50%"
-                    cy="50%"
-                    outerRadius="60%"
-                    data={chartData}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                <div className="lg:col-span-7 space-y-10">
+                  <motion.section
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25, duration: 0.5 }}
                   >
-                    <PolarGrid stroke="#f5f5f4" strokeWidth={1} />
-                    <PolarAngleAxis
-                      dataKey="subject"
-                      tick={{ fill: "#a8a29e", fontSize: 12 }}
-                    />
-                    <PolarRadiusAxis
-                      domain={[0, 100]}
-                      tick={false}
-                      axisLine={false}
-                    />
-                    <Radar
-                      name="Metrics"
-                      dataKey="A"
-                      stroke="#7dd3fc"
-                      strokeWidth={1.5}
-                      fill="#bae6fd"
-                      fillOpacity={0.4}
-                      isAnimationActive={true}
-                      animationDuration={1500}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </motion.div>
-              <p className="text-[14px] text-stone-500 text-center px-4 leading-relaxed font-light italic">
-                "{item.ai_insight}"
-              </p>
-            </div>
-            <div className="p-6 bg-gradient-to-t from-[#FDFDFD] via-[#FDFDFD] to-transparent pt-10 sticky bottom-0">
-              <button
-                onClick={() => onExpand(item)}
-                className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 text-white rounded-[20px] py-4 font-medium transition-transform active:scale-95 shadow-xl shadow-stone-800/20"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300" strokeWidth={2} />
-                查看完整数据分析和评价
-              </button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-});
-
-const FullScreenDetail = React.memo(({
-  item,
-  isOpen,
-  onClose,
-}: {
-  item: MenuItem | null;
-  isOpen: boolean;
-  onClose: () => void;
-}) => {
-  const [favorites, setFavorites] = useAtom(favoritesAtom);
-  const isFavorite = item ? favorites.includes(item.id) : false;
-
-  const chartData = useMemo(() => {
-    if (!item) return [];
-    return [
-      {
-        subject: "味道",
-        A: normalizeRadarScore(item.radar?.taste),
-        fullMark: 100,
-      },
-      {
-        subject: "性价比",
-        A: normalizeRadarScore(item.radar?.value),
-        fullMark: 100,
-      },
-      {
-        subject: "饱腹感",
-        A: normalizeRadarScore(item.radar?.satiety),
-        fullMark: 100,
-      },
-      {
-        subject: "健康度",
-        A: normalizeRadarScore(item.radar?.health),
-        fullMark: 100,
-      },
-      {
-        subject: "出餐速度",
-        A: normalizeRadarScore(item.radar?.wait_time),
-        fullMark: 100,
-      },
-      {
-        subject: "颜值",
-        A: normalizeRadarScore(item.radar?.aesthetic),
-        fullMark: 100,
-      },
-    ];
-  }, [item]);
-
-  const toggleFavorite = useCallback(() => {
-    if (!item) return;
-    setFavorites((previous) =>
-      previous.includes(item.id)
-        ? previous.filter((fav) => fav !== item.id)
-        : [...previous, item.id],
-    );
-  }, [item, setFavorites]);
-
-  if (!item) {
-    return null;
-  }
-
-  const macroEstimate = buildMacroEstimate(item);
-  const crowdTrend = buildCrowdTrend(item);
-  const referenceCards = buildReferenceCards(item);
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ y: "100%", opacity: 0.5 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{
-            y: "100%",
-            opacity: 0,
-            transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] },
-          }}
-          transition={{
-            type: "spring",
-            damping: 30,
-            stiffness: 250,
-            mass: 0.8,
-          }}
-          className="fixed inset-0 bg-[#FDFDFD] z-[60] overflow-y-auto overflow-x-hidden pb-32"
-        >
-          <div className="sticky top-0 z-20 w-full px-6 py-4 flex justify-between items-center bg-gradient-to-b from-[#FDFDFD]/90 to-transparent backdrop-blur-[2px]">
-            <button
-              onClick={onClose}
-              className="p-4 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 md:hover:bg-stone-50 active:bg-stone-100 transition-colors text-stone-600 focus:outline-none"
-            >
-              <X className="w-6 h-6" strokeWidth={1.5} />
-            </button>
-            <button
-              onClick={toggleFavorite}
-              className="p-4 rounded-full bg-white/80 backdrop-blur-md shadow-sm border border-stone-100/50 md:hover:bg-rose-50 active:bg-rose-100 transition-all text-stone-600 md:hover:scale-105 active:scale-95 focus:outline-none"
-            >
-              <Heart
-                className={cn(
-                  "w-6 h-6 transition-colors duration-300",
-                  isFavorite
-                    ? "text-rose-500 fill-rose-500 scale-110"
-                    : "hover:text-rose-500",
-                )}
-                strokeWidth={isFavorite ? 2 : 1.5}
-              />
-            </button>
-          </div>
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-20">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.15, duration: 0.6, ease: "easeOut" }}
-              className="relative h-[400px] rounded-[40px] overflow-hidden shadow-2xl shadow-stone-200/50 mb-10 mt-6"
-            >
-              <img
-                src={getImageUrl(item.image_key)}
-                alt={item.title}
-                loading="lazy"
-                decoding="async"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 via-stone-900/10 to-transparent" />
-              <div className="absolute bottom-8 left-8 right-8">
-                <div className="flex justify-between items-end gap-6">
-                  <div className="flex-1">
-                    <div className="inline-flex items-center px-4 py-2 bg-orange-500/90 backdrop-blur-md rounded-2xl text-[14px] font-bold text-white border border-orange-400/30 mb-4 shadow-lg">
-                      <MapPin className="w-4 h-4 mr-2" strokeWidth={2.5} />
-                      {item.location_text} · {item.shop_text} · {item.stall_text}
-                    </div>
-                    
-                    <h1 className="text-4xl sm:text-5xl font-bold text-white mb-6 tracking-tight font-serif drop-shadow-md leading-tight">
-                      {item.title}
-                    </h1>
-
-                    <div className="flex items-center px-4 py-2 bg-white/10 backdrop-blur-md rounded-2xl text-[13px] font-medium text-white border border-white/10 w-fit">
-                      <Clock className="w-3.5 h-3.5 mr-2 opacity-80" strokeWidth={1.5} />
-                      高峰预计等待：{item.wait_time_text}
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-3xl shadow-xl border border-white/20 transform translate-y-2">
-                    <span className="text-3xl font-bold text-stone-800 tracking-tight">
-                      ¥{item.price.toFixed(1)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-              <div className="lg:col-span-7 space-y-10">
-                <motion.section
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.25, duration: 0.5 }}
-                >
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="bg-amber-100 p-2.5 rounded-2xl">
-                      <Sparkles
-                        className="w-5 h-5 text-amber-600"
-                        strokeWidth={2}
-                      />
-                    </div>
-                    <h3 className="text-2xl font-bold text-stone-800 tracking-tight">
-                      AI 美食档案
-                    </h3>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="bg-white rounded-[28px] p-6 shadow-sm border border-stone-100 hover:shadow-md transition-shadow">
-                      <h4 className="text-sm font-medium text-stone-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                        <Flame className="w-4 h-4" />
-                        AI 推荐理由
-                      </h4>
-                      <p className="text-[15.5px] leading-relaxed text-stone-700">
-                        {item.ai_insight}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-rose-50/50 rounded-[28px] p-6 border border-rose-100">
-                        <h4 className="text-sm font-medium text-rose-400 uppercase tracking-widest mb-2">
-                          点单提醒
-                        </h4>
-                        <p className="text-[14px] leading-relaxed text-stone-600">
-                          {buildWarningText(item)}
-                        </p>
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="bg-amber-100 p-2.5 rounded-2xl">
+                        <Sparkles
+                          className="w-5 h-5 text-amber-600"
+                          strokeWidth={2}
+                        />
                       </div>
-                      <div className="bg-emerald-50/50 rounded-[28px] p-6 border border-emerald-100">
-                        <h4 className="text-sm font-medium text-emerald-500 uppercase tracking-widest mb-2">
-                          推荐场景
-                        </h4>
-                        <p className="text-[14px] leading-relaxed text-stone-600">
-                          {buildPairingText(item)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </motion.section>
-                <hr className="border-stone-100" />
-                <motion.section
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.35, duration: 0.5 }}
-                >
-                  <div className="flex justify-between items-end mb-6">
-                    <div>
-                      <h3 className="text-2xl font-bold text-stone-800 tracking-tight mb-1">
-                        点餐参考
+                      <h3 className="text-2xl font-bold text-stone-800 tracking-tight">
+                        AI 美食档案
                       </h3>
-                      <p className="text-sm text-stone-500">
-                        基于真实菜单字段整理出的速览卡片
-                      </p>
                     </div>
-                  </div>
-                  <div className="flex overflow-x-auto pb-8 -mx-4 px-4 sm:-mx-8 sm:px-8 snap-x snap-mandatory hide-scrollbar gap-5">
-                    {referenceCards.map((card) => (
-                      <div
-                        key={card.id}
-                        className="min-w-[280px] sm:min-w-[320px] bg-white rounded-[32px] p-6 shadow-xl shadow-stone-200/30 snap-center border border-stone-50"
-                      >
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="flex gap-3 items-center">
-                            <div
-                              className={cn(
-                                "w-10 h-10 rounded-full bg-gradient-to-tr",
-                                card.accentClassName,
-                              )}
-                            />
-                            <div>
-                              <div className="font-semibold text-[15px] text-stone-800">
-                                {card.title}
-                              </div>
-                              <div className="text-xs text-stone-400">
-                                {card.subtitle}
+                    <div className="space-y-4">
+                      <div className="bg-white rounded-[28px] p-6 shadow-sm border border-stone-100 hover:shadow-md transition-shadow">
+                        <h4 className="text-sm font-medium text-stone-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                          <Flame className="w-4 h-4" />
+                          AI 推荐理由
+                        </h4>
+                        <p className="text-[15.5px] leading-relaxed text-stone-700">
+                          {item.ai_insight}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-rose-50/50 rounded-[28px] p-6 border border-rose-100">
+                          <h4 className="text-sm font-medium text-rose-400 uppercase tracking-widest mb-2">
+                            点单提醒
+                          </h4>
+                          <p className="text-[14px] leading-relaxed text-stone-600">
+                            {buildWarningText(item)}
+                          </p>
+                        </div>
+                        <div className="bg-emerald-50/50 rounded-[28px] p-6 border border-emerald-100">
+                          <h4 className="text-sm font-medium text-emerald-500 uppercase tracking-widest mb-2">
+                            推荐场景
+                          </h4>
+                          <p className="text-[14px] leading-relaxed text-stone-600">
+                            {buildPairingText(item)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.section>
+                  <hr className="border-stone-100" />
+                  <motion.section
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.35, duration: 0.5 }}
+                  >
+                    <div className="flex justify-between items-end mb-6">
+                      <div>
+                        <h3 className="text-2xl font-bold text-stone-800 tracking-tight mb-1">
+                          点餐参考
+                        </h3>
+                        <p className="text-sm text-stone-500">
+                          基于真实菜单字段整理出的速览卡片
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex overflow-x-auto pb-8 -mx-4 px-4 sm:-mx-8 sm:px-8 snap-x snap-mandatory hide-scrollbar gap-5">
+                      {referenceCards.map((card) => (
+                        <div
+                          key={card.id}
+                          className="min-w-[280px] sm:min-w-[320px] bg-white rounded-[32px] p-6 shadow-xl shadow-stone-200/30 snap-center border border-stone-50"
+                        >
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="flex gap-3 items-center">
+                              <div
+                                className={cn(
+                                  "w-10 h-10 rounded-full bg-gradient-to-tr",
+                                  card.accentClassName,
+                                )}
+                              />
+                              <div>
+                                <div className="font-semibold text-[15px] text-stone-800">
+                                  {card.title}
+                                </div>
+                                <div className="text-xs text-stone-400">
+                                  {card.subtitle}
+                                </div>
                               </div>
                             </div>
+                            <div className="bg-stone-50 px-3 py-1 rounded-full text-xs font-medium text-stone-600 border border-stone-100">
+                              Live
+                            </div>
                           </div>
-                          <div className="bg-stone-50 px-3 py-1 rounded-full text-xs font-medium text-stone-600 border border-stone-100">
-                            Live
-                          </div>
+                          <p className="text-[15px] text-stone-600 leading-relaxed font-light">
+                            {card.body}
+                          </p>
                         </div>
-                        <p className="text-[15px] text-stone-600 leading-relaxed font-light">
-                          {card.body}
-                        </p>
-                      </div>
-                    ))}
-                    <motion.button
-                      whileHover={{ scale: 0.98, backgroundColor: "#f5f5f4" }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={onClose}
-                      className="min-w-[280px] sm:min-w-[320px] bg-stone-50/50 rounded-[32px] p-6 snap-center border-2 border-dashed border-stone-200 flex flex-col items-center justify-center transition-colors group"
-                    >
-                      <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                        <Home className="w-5 h-5 text-stone-400 group-hover:text-stone-600" />
-                      </div>
-                      <span className="font-medium text-stone-500 group-hover:text-stone-700">
-                        继续从首页或 AI 面板里挑下一道
-                      </span>
-                    </motion.button>
-                  </div>
-                </motion.section>
-              </div>
-              <div className="lg:col-span-5 space-y-6">
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3, duration: 0.5 }}
-                  className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
-                >
-                  <h4 className="font-bold text-[18px] text-stone-800 mb-6">
-                    多维评测
-                  </h4>
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 120,
-                      damping: 20,
-                      delay: 0.5,
-                    }}
-                    className="h-[240px] w-full -ml-3"
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart
-                        cx="50%"
-                        cy="50%"
-                        outerRadius="65%"
-                        data={chartData}
+                      ))}
+                      <motion.button
+                        whileHover={{ scale: 0.98, backgroundColor: "#f5f5f4" }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={onClose}
+                        className="min-w-[280px] sm:min-w-[320px] bg-stone-50/50 rounded-[32px] p-6 snap-center border-2 border-dashed border-stone-200 flex flex-col items-center justify-center transition-colors group"
                       >
-                        <PolarGrid stroke="#f5f5f4" strokeWidth={1.5} />
-                        <PolarAngleAxis
-                          dataKey="subject"
-                          tick={{
-                            fill: "#78716c",
-                            fontSize: 13,
-                            fontWeight: 500,
-                          }}
-                        />
-                        <PolarRadiusAxis
-                          angle={30}
-                          domain={[0, 100]}
-                          tick={false}
-                          axisLine={false}
-                        />
-                        <Radar
-                          name="Metrics"
-                          dataKey="A"
-                          stroke="#7dd3fc"
-                          strokeWidth={2}
-                          fill="#bae6fd"
-                          fillOpacity={0.4}
-                          isAnimationActive={true}
-                          animationDuration={1500}
-                        />
-                      </RadarChart>
-                    </ResponsiveContainer>
-                  </motion.div>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.4, duration: 0.5 }}
-                  className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
-                >
-                  <div className="flex justify-between items-end mb-6">
-                    <h4 className="font-bold text-[18px] text-stone-800">
-                      减脂与宏量预估
-                    </h4>
-                    <div className="text-right">
-                      <span className="text-2xl font-black text-stone-800">
-                        {macroEstimate.calories}
-                      </span>
-                      <span className="text-sm font-medium text-stone-400 ml-1">
-                        kcal
-                      </span>
+                        <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <Home className="w-5 h-5 text-stone-400 group-hover:text-stone-600" />
+                        </div>
+                        <span className="font-medium text-stone-500 group-hover:text-stone-700">
+                          继续从首页或 AI 面板里挑下一道
+                        </span>
+                      </motion.button>
                     </div>
-                  </div>
-                  <div className="space-y-4">
-                    {[
-                      {
-                        label: "蛋白质 (Protein)",
-                        value: macroEstimate.protein,
-                        max: 55,
-                        color: "bg-blue-400",
-                        icon: (
-                          <Droplets className="w-3.5 h-3.5 text-blue-400" />
-                        ),
-                      },
-                      {
-                        label: "碳水化合物 (Carbs)",
-                        value: macroEstimate.carbs,
-                        max: 110,
-                        color: "bg-amber-400",
-                        icon: <Wheat className="w-3.5 h-3.5 text-amber-400" />,
-                      },
-                      {
-                        label: "脂肪 (Fat)",
-                        value: macroEstimate.fat,
-                        max: 45,
-                        color: "bg-rose-400",
-                        icon: (
-                          <Droplets className="w-3.5 h-3.5 text-rose-400" />
-                        ),
-                      },
-                    ].map((macro, index) => (
-                      <div key={macro.label}>
-                        <div className="flex justify-between text-[13px] font-medium mb-1.5">
-                          <span className="text-stone-500 flex items-center gap-1.5">
-                            {macro.icon}
-                            {macro.label}
-                          </span>
-                          <span className="text-stone-800">{macro.value}g</span>
-                        </div>
-                        <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{
-                              width: `${clamp((macro.value / macro.max) * 100, 0, 100)}%`,
+                  </motion.section>
+                </div>
+                <div className="lg:col-span-5 space-y-6">
+                  <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.3, duration: 0.5 }}
+                    className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
+                  >
+                    <h4 className="font-bold text-[18px] text-stone-800 mb-6">
+                      多维评测
+                    </h4>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 120,
+                        damping: 20,
+                        delay: 0.5,
+                      }}
+                      className="h-[240px] w-full -ml-3"
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart
+                          cx="50%"
+                          cy="50%"
+                          outerRadius="65%"
+                          data={chartData}
+                        >
+                          <PolarGrid stroke="#f5f5f4" strokeWidth={1.5} />
+                          <PolarAngleAxis
+                            dataKey="subject"
+                            tick={{
+                              fill: "#78716c",
+                              fontSize: 13,
+                              fontWeight: 500,
                             }}
-                            transition={{
-                              delay: 0.8 + index * 0.1,
-                              duration: 1,
-                              type: "spring",
-                            }}
-                            className={cn("h-full rounded-full", macro.color)}
                           />
-                        </div>
+                          <PolarRadiusAxis
+                            angle={30}
+                            domain={[0, 100]}
+                            tick={false}
+                            axisLine={false}
+                          />
+                          <Radar
+                            name="Metrics"
+                            dataKey="A"
+                            stroke="#7dd3fc"
+                            strokeWidth={2}
+                            fill="#bae6fd"
+                            fillOpacity={0.4}
+                            isAnimationActive={true}
+                            animationDuration={1500}
+                          />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </motion.div>
+                  </motion.div>
+                  <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.4, duration: 0.5 }}
+                    className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
+                  >
+                    <div className="flex justify-between items-end mb-6">
+                      <h4 className="font-bold text-[18px] text-stone-800">
+                        减脂与宏量预估
+                      </h4>
+                      <div className="text-right">
+                        <span className="text-2xl font-black text-stone-800">
+                          {macroEstimate.calories}
+                        </span>
+                        <span className="text-sm font-medium text-stone-400 ml-1">
+                          kcal
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5, duration: 0.5 }}
-                  className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
-                >
-                  <h4 className="font-bold text-[18px] text-stone-800 mb-6">
-                    窗口人流预测
-                  </h4>
-                  <div className="h-[100px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={crowdTrend}
-                        margin={{ top: 5, right: 0, left: -20, bottom: 0 }}
-                      >
-                        <defs>
-                          <linearGradient
-                            id="colorCrowd"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="5%"
-                              stopColor="#d1d5db"
-                              stopOpacity={0.8}
+                    </div>
+                    <div className="space-y-4">
+                      {[
+                        {
+                          label: "蛋白质 (Protein)",
+                          value: macroEstimate.protein,
+                          max: 55,
+                          color: "bg-blue-400",
+                          icon: (
+                            <Droplets className="w-3.5 h-3.5 text-blue-400" />
+                          ),
+                        },
+                        {
+                          label: "碳水化合物 (Carbs)",
+                          value: macroEstimate.carbs,
+                          max: 110,
+                          color: "bg-amber-400",
+                          icon: (
+                            <Wheat className="w-3.5 h-3.5 text-amber-400" />
+                          ),
+                        },
+                        {
+                          label: "脂肪 (Fat)",
+                          value: macroEstimate.fat,
+                          max: 45,
+                          color: "bg-rose-400",
+                          icon: (
+                            <Droplets className="w-3.5 h-3.5 text-rose-400" />
+                          ),
+                        },
+                      ].map((macro, index) => (
+                        <div key={macro.label}>
+                          <div className="flex justify-between text-[13px] font-medium mb-1.5">
+                            <span className="text-stone-500 flex items-center gap-1.5">
+                              {macro.icon}
+                              {macro.label}
+                            </span>
+                            <span className="text-stone-800">
+                              {macro.value}g
+                            </span>
+                          </div>
+                          <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{
+                                width: `${clamp((macro.value / macro.max) * 100, 0, 100)}%`,
+                              }}
+                              transition={{
+                                delay: 0.8 + index * 0.1,
+                                duration: 1,
+                                type: "spring",
+                              }}
+                              className={cn("h-full rounded-full", macro.color)}
                             />
-                            <stop
-                              offset="95%"
-                              stopColor="#d1d5db"
-                              stopOpacity={0}
-                            />
-                          </linearGradient>
-                        </defs>
-                        <XAxis
-                          dataKey="time"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "#9ca3af", fontSize: 11 }}
-                          dy={10}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: "16px",
-                            border: "none",
-                            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                            fontSize: "12px",
-                          }}
-                          formatter={(value) => [
-                            `${String(value ?? 0)}% 拥挤`,
-                            "排队指数",
-                          ]}
-                          labelStyle={{ color: "#6b7280", marginBottom: "4px" }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="level"
-                          stroke="#9ca3af"
-                          strokeWidth={2}
-                          fillOpacity={1}
-                          fill="url(#colorCrowd)"
-                          isAnimationActive={false}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </motion.div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                  <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.5, duration: 0.5 }}
+                    className="bg-white rounded-[32px] p-7 shadow-xl shadow-stone-200/30 border border-stone-50"
+                  >
+                    <h4 className="font-bold text-[18px] text-stone-800 mb-6">
+                      窗口人流预测
+                    </h4>
+                    <div className="h-[100px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={crowdTrend}
+                          margin={{ top: 5, right: 0, left: -20, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient
+                              id="colorCrowd"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor="#d1d5db"
+                                stopOpacity={0.8}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor="#d1d5db"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <XAxis
+                            dataKey="time"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#9ca3af", fontSize: 11 }}
+                            dy={10}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              borderRadius: "16px",
+                              border: "none",
+                              boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                              fontSize: "12px",
+                            }}
+                            formatter={(value) => [
+                              `${String(value ?? 0)}% 拥挤`,
+                              "排队指数",
+                            ]}
+                            labelStyle={{
+                              color: "#6b7280",
+                              marginBottom: "4px",
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="level"
+                            stroke="#9ca3af"
+                            strokeWidth={2}
+                            fillOpacity={1}
+                            fill="url(#colorCrowd)"
+                            isAnimationActive={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </motion.div>
+                </div>
               </div>
             </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-});
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  },
+);
 
 const LoadingState = React.memo(() => {
   return (
@@ -1625,552 +1654,577 @@ const XiaoDIcon = React.memo(({ size = 48 }: { size?: number }) => (
   </svg>
 ));
 
-const AIMagicIsland = React.memo(({
-  onOpen,
-  isHidden
-}: {
-  onOpen: () => void;
-  isHidden: boolean;
-}) => {
-  return (
-    <AnimatePresence>
-      {!isHidden && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none px-4 pb-[calc(max(env(safe-area-inset-bottom),24px)+88px)]">
-          <motion.div
-            initial={{ y: 100, opacity: 0, scale: 0.8 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 100, opacity: 0, scale: 0.8 }}
-            whileHover={{ y: -4 }}
-            transition={{ 
-              type: "spring", 
-              stiffness: 260, 
-              damping: 24,
-              mass: 0.8
-            }}
-            style={{ willChange: "transform, opacity" }}
-            className="pointer-events-auto group relative"
-          >
-            {/* Aura Glow Effect */}
+const AIMagicIsland = React.memo(
+  ({ onOpen, isHidden }: { onOpen: () => void; isHidden: boolean }) => {
+    return (
+      <AnimatePresence>
+        {!isHidden && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none px-4 pb-[calc(max(env(safe-area-inset-bottom),24px)+88px)]">
             <motion.div
-              animate={{
-                opacity: [0.3, 0.6, 0.3],
-                scale: [1, 1.05, 1],
-              }}
+              initial={{ y: 100, opacity: 0, scale: 0.8 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 100, opacity: 0, scale: 0.8 }}
+              whileHover={{ y: -4 }}
               transition={{
-                duration: 4,
-                repeat: Infinity,
-                ease: "easeInOut"
+                type: "spring",
+                stiffness: 260,
+                damping: 24,
+                mass: 0.8,
               }}
-              className="absolute -inset-2 bg-gradient-to-r from-blue-400/20 via-sky-400/20 to-indigo-400/20 rounded-[32px] blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
-            />
-
-            <button
-              onClick={onOpen}
-              className="relative flex items-center gap-4 bg-white/95 md:bg-white/70 backdrop-blur-md md:backdrop-blur-2xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.1)] md:hover:shadow-[0_12px_48px_rgba(0,120,255,0.15)] px-6 py-3.5 rounded-[28px] transition-all active:scale-95 group"
+              style={{ willChange: "transform, opacity" }}
+              className="pointer-events-auto group relative"
             >
-              <div className="relative">
-                <XiaoDIcon size={36} />
-                <div className="absolute -top-1 -right-1 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+              {/* Aura Glow Effect */}
+              <motion.div
+                animate={{
+                  opacity: [0.3, 0.6, 0.3],
+                  scale: [1, 1.05, 1],
+                }}
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+                className="absolute -inset-2 bg-gradient-to-r from-blue-400/20 via-sky-400/20 to-indigo-400/20 rounded-[32px] blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
+              />
+
+              <button
+                onClick={onOpen}
+                className="relative flex items-center gap-4 bg-white/95 md:bg-white/70 backdrop-blur-md md:backdrop-blur-2xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.1)] md:hover:shadow-[0_12px_48px_rgba(0,120,255,0.15)] px-6 py-3.5 rounded-[28px] transition-all active:scale-95 group"
+              >
+                <div className="relative">
+                  <XiaoDIcon size={36} />
+                  <div className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="flex flex-col items-start pr-2">
-                <span className="text-[14px] font-bold bg-gradient-to-r from-stone-800 to-stone-500 bg-clip-text text-transparent">
-                  准备好遇见美味了吗？
-                </span>
-                <span className="text-[11px] text-stone-400 font-medium tracking-wide">
-                  ASK XIAOD · 点击开启 AI 寻味
-                </span>
-              </div>
 
-              <div className="ml-2 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                <Sparkles className="w-4 h-4 text-stone-400 group-hover:text-blue-500 transition-colors" strokeWidth={2.5} />
-              </div>
-            </button>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-});
+                <div className="flex flex-col items-start pr-2">
+                  <span className="text-[14px] font-bold bg-gradient-to-r from-stone-800 to-stone-500 bg-clip-text text-transparent">
+                    准备好遇见美味了吗？
+                  </span>
+                  <span className="text-[11px] text-stone-400 font-medium tracking-wide">
+                    ASK XIAOD · 点击开启 AI 寻味
+                  </span>
+                </div>
 
-const XiaoDFloatingChat = React.memo(({
-  menus,
-  onPickItem,
-}: {
-  menus: MenuItem[];
-  onPickItem: (item: MenuItem) => void;
-}) => {
-  const [isAiOpen, setIsAiOpen] = useAtom(isAiModeAtom);
-  const [aiInput, setAiInput] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
-  const [messages, setMessages] = useState<
-    Array<{ role: "user" | "ai"; text: string }>
-  >([]);
-  const [recommendations, setRecommendations] = useState<RankedMenuItem[]>([]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const [isTalking, setIsTalking] = useState(false);
-
-  const robotMode: RobotMode = isThinking
-    ? "thinking"
-    : isTalking
-      ? "talking"
-      : messages.length > 0
-        ? "smiling"
-        : "idle";
-
-  async function sendMessage() {
-    const query = aiInput.trim();
-    if (!query || isThinking) {
-      return;
-    }
-
-    const conversationHistory = [...messages.slice(-6)];
-
-    setAiInput("");
-    setRecommendations([]);
-    setMessages((previous) => [...previous, { role: "user", text: query }]);
-    setIsThinking(true);
-    setTimeout(
-      () => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }),
-      120,
+                <div className="ml-2 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                  <Sparkles
+                    className="w-4 h-4 text-stone-400 group-hover:text-blue-500 transition-colors"
+                    strokeWidth={2.5}
+                  />
+                </div>
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     );
+  },
+);
 
-    try {
-      const response = await fetch("/api/recommend/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query,
-          conversation_history: conversationHistory,
-          top_k: 4,
-        }),
-      });
+const XiaoDFloatingChat = React.memo(
+  ({
+    menus,
+    onPickItem,
+  }: {
+    menus: MenuItem[];
+    onPickItem: (item: MenuItem) => void;
+  }) => {
+    const [isAiOpen, setIsAiOpen] = useAtom(isAiModeAtom);
+    const [aiInput, setAiInput] = useState("");
+    const [isThinking, setIsThinking] = useState(false);
+    const [messages, setMessages] = useState<
+      Array<{ role: "user" | "ai"; text: string }>
+    >([]);
+    const [recommendations, setRecommendations] = useState<RankedMenuItem[]>(
+      [],
+    );
+    const chatEndRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
-      if (!response.ok) throw new Error("Failed to connect to stream");
-      if (!response.body) throw new Error("No response body");
+    const [isTalking, setIsTalking] = useState(false);
 
-      setIsThinking(false);
-      setIsTalking(true);
+    const robotMode: RobotMode = isThinking
+      ? "thinking"
+      : isTalking
+        ? "talking"
+        : messages.length > 0
+          ? "smiling"
+          : "idle";
 
-      // Add a placeholder AI message
-      setMessages((prev) => [...prev, { role: "ai", text: "" }]);
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === "data: [DONE]") continue;
-
-          if (trimmed.startsWith("data: ")) {
-            try {
-              const chunk = JSON.parse(trimmed.slice(6));
-
-              if (chunk.type === "text") {
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  const lastIndex = updated.length - 1;
-                  if (lastIndex >= 0 && updated[lastIndex].role === "ai") {
-                    // Immutable update: create new object for the last message
-                    updated[lastIndex] = {
-                      ...updated[lastIndex],
-                      text: updated[lastIndex].text + chunk.text,
-                    };
-                  }
-                  return updated;
-                });
-                chatEndRef.current?.scrollIntoView({ behavior: "auto" });
-              } else if (chunk.type === "final") {
-                setRecommendations(chunk.data.items);
-                if (chunk.data.reply_text) {
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    if (last && last.role === "ai") {
-                      last.text = chunk.data.reply_text;
-                    }
-                    return updated;
-                  });
-                }
-              } else if (chunk.type === "error") {
-                throw new Error(chunk.message);
-              }
-            } catch (e) {
-              console.error("Chunk parse error:", e);
-            }
-          }
-        }
+    async function sendMessage() {
+      const query = aiInput.trim();
+      if (!query || isThinking) {
+        return;
       }
-    } catch (error) {
-      console.error("AI Chat Error:", error);
-      const isFetchError = error instanceof TypeError && error.message.includes("fetch");
-      setMessages((previous) => [
-        ...previous,
-        {
-          role: "ai",
-          text: isFetchError 
-            ? "糟了，西小电暂时连不上大脑（后端服务未启动或网络错误）。请确保你已经运行了 `npm run server` 哦！"
-            : (error instanceof Error ? error.message : "推荐接口暂时不可用。"),
-        },
-      ]);
-    } finally {
-      setIsThinking(false);
-      setIsTalking(false);
+
+      const conversationHistory = [...messages.slice(-6)];
+
+      setAiInput("");
+      setRecommendations([]);
+      setMessages((previous) => [...previous, { role: "user", text: query }]);
+      setIsThinking(true);
       setTimeout(
         () => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }),
         120,
       );
+
+      try {
+        const response = await fetch("/api/recommend/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            conversation_history: conversationHistory,
+            top_k: 4,
+          }),
+        });
+
+        if (!response.ok) throw new Error("Failed to connect to stream");
+        if (!response.body) throw new Error("No response body");
+
+        setIsThinking(false);
+        setIsTalking(true);
+
+        // Add a placeholder AI message
+        setMessages((prev) => [...prev, { role: "ai", text: "" }]);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === "data: [DONE]") continue;
+
+            if (trimmed.startsWith("data: ")) {
+              try {
+                const chunk = JSON.parse(trimmed.slice(6));
+
+                if (chunk.type === "text") {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const lastIndex = updated.length - 1;
+                    if (lastIndex >= 0 && updated[lastIndex].role === "ai") {
+                      // Immutable update: create new object for the last message
+                      updated[lastIndex] = {
+                        ...updated[lastIndex],
+                        text: updated[lastIndex].text + chunk.text,
+                      };
+                    }
+                    return updated;
+                  });
+                  chatEndRef.current?.scrollIntoView({ behavior: "auto" });
+                } else if (chunk.type === "final") {
+                  setRecommendations(chunk.data.items);
+                  if (chunk.data.reply_text) {
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      const last = updated[updated.length - 1];
+                      if (last && last.role === "ai") {
+                        last.text = chunk.data.reply_text;
+                      }
+                      return updated;
+                    });
+                  }
+                } else if (chunk.type === "error") {
+                  throw new Error(chunk.message);
+                }
+              } catch (e) {
+                console.error("Chunk parse error:", e);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("AI Chat Error:", error);
+        const isFetchError =
+          error instanceof TypeError && error.message.includes("fetch");
+        setMessages((previous) => [
+          ...previous,
+          {
+            role: "ai",
+            text: isFetchError
+              ? "糟了，西小电暂时连不上大脑（后端服务未启动或网络错误）。请确保你已经运行了 `npm run server` 哦！"
+              : error instanceof Error
+                ? error.message
+                : "推荐接口暂时不可用。",
+          },
+        ]);
+      } finally {
+        setIsThinking(false);
+        setIsTalking(false);
+        setTimeout(
+          () => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }),
+          120,
+        );
+      }
     }
-  }
 
-  useEffect(() => {
-    if (isAiOpen) {
-      setTimeout(() => inputRef.current?.focus(), 600);
-    }
-  }, [isAiOpen]);
+    useEffect(() => {
+      if (isAiOpen) {
+        setTimeout(() => inputRef.current?.focus(), 600);
+      }
+    }, [isAiOpen]);
 
-  return (
-    <>
-      <AIMagicIsland 
-        onOpen={() => setIsAiOpen(true)} 
-        isHidden={isAiOpen} 
-      />
+    return (
+      <>
+        <AIMagicIsland onOpen={() => setIsAiOpen(true)} isHidden={isAiOpen} />
 
-      <AnimatePresence>
-        {isAiOpen && (
-          <>
-            <motion.div
-              key="backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              onClick={() => setIsAiOpen(false)}
-              className="fixed inset-0 z-40"
-              style={{
-                background:
-                  "radial-gradient(ellipse at bottom right, rgba(30,60,120,0.35) 0%, rgba(0,0,0,0.45) 100%)",
-                backdropFilter: "blur(8px)",
-              }}
-            />
-
-            <motion.div
-              key="panel"
-              initial={{
-                opacity: 0,
-                scale: 0.15,
-                x: 120,
-                y: 200,
-                borderRadius: "50%",
-              }}
-              animate={{
-                opacity: 1,
-                scale: 1,
-                x: 0,
-                y: 0,
-                borderRadius: "28px",
-              }}
-              exit={{
-                opacity: 0,
-                scale: 0.12,
-                x: 120,
-                y: 200,
-                borderRadius: "50%",
-              }}
-              transition={{
-                type: "spring",
-                stiffness: 200,
-                damping: 26,
-                mass: 0.9,
-              }}
-              className="fixed inset-x-3 bottom-0 md:right-6 md:left-auto md:w-[400px] z-50 overflow-hidden flex flex-col mb-[calc(env(safe-area-inset-bottom,12px)+88px)] md:mb-[env(safe-area-inset-bottom,12px)]"
-              style={{
-                top: "max(env(safe-area-inset-top, 12px), 12px)",
-                maxHeight: "calc(100vh - env(safe-area-inset-bottom, 12px) - 110px)",
-                background:
-                  "linear-gradient(160deg, #0d1b2e 0%, #0a2240 40%, #0e1f38 100%)",
-                boxShadow:
-                  "0 32px 80px rgba(0,30,80,0.6), 0 0 0 1px rgba(80,160,255,0.15) inset",
-                willChange: "transform, opacity",
-              }}
-            >
+        <AnimatePresence>
+          {isAiOpen && (
+            <>
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
-                className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0"
-              >
-                <div>
-                  <p className="text-white font-bold text-[16px] tracking-wide">
-                    西小电
-                  </p>
-                  <p className="text-blue-300/80 text-[12px]">
-                    西电美食 AI 助手
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsAiOpen(false)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-                >
-                  <X className="w-4 h-4 text-white/70" strokeWidth={2} />
-                </button>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, scale: 0.7, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{
-                  type: "spring",
-                  stiffness: 180,
-                  damping: 22,
-                  delay: 0.18,
-                }}
-                className="relative shrink-0"
-                style={{ height: "220px" }}
-              >
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-12 rounded-full bg-blue-500/20 blur-2xl" />
-                <div
-                  className="absolute inset-0 opacity-10"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(rgba(100,180,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(100,180,255,0.3) 1px, transparent 1px)",
-                    backgroundSize: "28px 28px",
-                  }}
-                />
-                <div className="absolute inset-0 w-full h-full flex items-center justify-center">
-                  <ErrorBoundary>
-                    <XiaoD mode={robotMode} />
-                  </ErrorBoundary>
-                </div>
-
-                <motion.div
-                  key={robotMode}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white/8 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10"
-                >
-                  <motion.div
-                    animate={{ opacity: [1, 0.3, 1] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                    className="w-1.5 h-1.5 rounded-full bg-blue-400"
-                  />
-                  <span className="text-blue-200 text-[12px] font-medium">
-                    {robotMode === "idle"
-                      ? "等待中"
-                      : robotMode === "thinking"
-                        ? "思考中..."
-                        : robotMode === "talking"
-                          ? "回复中..."
-                          : "已准备好"}
-                  </span>
-                </motion.div>
-              </motion.div>
-
-              <motion.div
+                key="backdrop"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.35 }}
-                className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0"
-                style={{ scrollbarWidth: "none" }}
-              >
-                {messages.length === 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.45 }}
-                    className="text-center py-4"
-                  >
-                    <p className="text-blue-200/70 text-[14px] mb-4">
-                      嗨！告诉我你现在想吃什么 👋
-                    </p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                      {["🌶️ 来点辣的", "💰 实惠的", "🥗 清淡健康"].map(
-                        (sample) => (
-                          <button
-                            key={sample}
-                            onClick={() => {
-                              setAiInput(sample.slice(3));
-                              inputRef.current?.focus();
-                            }}
-                            className="bg-white/10 hover:bg-white/18 text-blue-100 text-[13px] font-medium px-3.5 py-1.5 rounded-full transition-colors border border-white/15 backdrop-blur-sm"
-                          >
-                            {sample}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  </motion.div>
-                ) : (
-                  messages.map((message, index) => {
-                    const isLast = index === messages.length - 1;
-                    const showRecommendations = isLast && message.role === "ai" && recommendations.length > 0;
-                    
-                    return (
-                      <div key={`${message.role}-${index}`} className="space-y-4">
-                        {showRecommendations && (
-                          <motion.div 
-                            initial="hidden"
-                            animate="show"
-                            variants={{
-                              hidden: { opacity: 0 },
-                              show: {
-                                opacity: 1,
-                                transition: { staggerChildren: 0.08, delayChildren: 0.1 }
-                              }
-                            }}
-                            className="space-y-2 pt-2"
-                          >
-                            <motion.div 
-                              variants={{
-                                hidden: { opacity: 0, x: -5 },
-                                show: { opacity: 1, x: 0 }
-                              }}
-                              className="text-[12px] uppercase tracking-widest text-blue-200/60 ml-1"
-                            >
-                              为你精选
-                            </motion.div>
-                            {recommendations.map(({ item, matched_reasons }) => {
-                              const fullItem =
-                                menus.find((m) => m.id === item.id) || item;
-                              return (
-                                <motion.button
-                                  key={item.id}
-                                  variants={{
-                                    hidden: { opacity: 0, y: 12, scale: 0.96 },
-                                    show: { 
-                                      opacity: 1, 
-                                      y: 0, 
-                                      scale: 1,
-                                      transition: {
-                                        type: "spring",
-                                        stiffness: 300,
-                                        damping: 22
-                                      }
-                                    }
-                                  }}
-                                  whileHover={{ scale: 1.02, backgroundColor: "rgba(255, 255, 255, 0.15)" }}
-                                  whileTap={{ scale: 0.98 }}
-                                  onClick={() => {
-                                    onPickItem(fullItem);
-                                    setIsAiOpen(false);
-                                  }}
-                                  style={{ willChange: "transform, opacity" }}
-                                  className="w-full text-left bg-white/10 border border-white/10 rounded-2xl px-4 py-3 transition-colors shadow-lg"
-                                >
-                                  <div className="flex items-center justify-between gap-3 mb-1">
-                                    <span className="text-white font-medium line-clamp-1">
-                                      {item.title}
-                                    </span>
-                                    <span className="text-blue-200 text-sm">
-                                      ¥{item.price.toFixed(1)}
-                                    </span>
-                                  </div>
-                                  <div className="text-blue-100/70 text-[12px] line-clamp-1">
-                                    {item.location_text} · {item.shop_text}
-                                  </div>
-                                  <div className="text-blue-100/70 text-[12px] mt-1 line-clamp-1">
-                                    {matched_reasons.length
-                                      ? matched_reasons.join(" / ")
-                                      : item.badge}
-                                  </div>
-                                </motion.button>
-                              );
-                            })}
-                          </motion.div>
-                        )}
-                        <motion.div
-                          initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 300,
-                            damping: 24,
-                          }}
-                          className={`flex ${message.role === "user" ? "justify-end" : "justify-start gap-2"}`}
-                        >
-                          {message.role === "ai" && (
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 shrink-0 flex items-center justify-center text-white font-black text-[10px] shadow-md mt-0.5">
-                              D
-                            </div>
-                          )}
-                          <div
-                            className={cn(
-                              "max-w-[78%] text-[13.5px] leading-relaxed px-3.5 py-2.5 rounded-2xl",
-                              message.role === "user"
-                                ? "bg-blue-500 text-white rounded-br-sm shadow-md"
-                                : "bg-white/12 text-blue-50 rounded-bl-sm border border-white/10",
-                            )}
-                          >
-                            {message.text}
-                          </div>
-                        </motion.div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={chatEndRef} />
-              </motion.div>
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                onClick={() => setIsAiOpen(false)}
+                className="fixed inset-0 z-40"
+                style={{
+                  background:
+                    "radial-gradient(ellipse at bottom right, rgba(30,60,120,0.35) 0%, rgba(0,0,0,0.45) 100%)",
+                  backdropFilter: "blur(8px)",
+                }}
+              />
 
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  delay: 0.4,
-                  type: "spring",
-                  stiffness: 260,
-                  damping: 24,
+                key="panel"
+                initial={{
+                  opacity: 0,
+                  scale: 0.15,
+                  x: 120,
+                  y: 200,
+                  borderRadius: "50%",
                 }}
-                className="px-4 pb-5 pt-2 shrink-0"
+                animate={{
+                  opacity: 1,
+                  scale: 1,
+                  x: 0,
+                  y: 0,
+                  borderRadius: "28px",
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: 0.12,
+                  x: 120,
+                  y: 200,
+                  borderRadius: "50%",
+                }}
+                transition={{
+                  type: "spring",
+                  stiffness: 200,
+                  damping: 26,
+                  mass: 0.9,
+                }}
+                className="fixed inset-x-3 bottom-0 md:right-6 md:left-auto md:w-[400px] z-50 overflow-hidden flex flex-col mb-[calc(env(safe-area-inset-bottom,12px)+88px)] md:mb-[env(safe-area-inset-bottom,12px)]"
+                style={{
+                  top: "max(env(safe-area-inset-top, 12px), 12px)",
+                  maxHeight:
+                    "calc(100vh - env(safe-area-inset-bottom, 12px) - 110px)",
+                  background:
+                    "linear-gradient(160deg, #0d1b2e 0%, #0a2240 40%, #0e1f38 100%)",
+                  boxShadow:
+                    "0 32px 80px rgba(0,30,80,0.6), 0 0 0 1px rgba(80,160,255,0.15) inset",
+                  willChange: "transform, opacity",
+                }}
               >
-                <div className="flex gap-2 bg-white/10 backdrop-blur-md rounded-2xl p-1.5 border border-white/15">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={aiInput}
-                    onChange={(event) => setAiInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        void sendMessage();
-                      }
-                    }}
-                    placeholder="说说你想吃什么..."
-                    className="flex-1 bg-transparent border-none outline-none text-[14px] text-white placeholder-white/40 px-2"
-                  />
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25 }}
+                  className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0"
+                >
+                  <div>
+                    <p className="text-white font-bold text-[16px] tracking-wide">
+                      西小电
+                    </p>
+                    <p className="text-blue-300/80 text-[12px]">
+                      西电美食 AI 助手
+                    </p>
+                  </div>
                   <button
-                    onClick={() => void sendMessage()}
-                    disabled={!aiInput.trim() || isThinking}
-                    className="disabled:opacity-30 bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-xl text-[13px] font-semibold transition-all active:scale-90 flex items-center gap-1.5"
+                    onClick={() => setIsAiOpen(false)}
+                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
                   >
-                    {isThinking ? (
-                      <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5" strokeWidth={2} />
-                    )}
-                    发送
+                    <X className="w-4 h-4 text-white/70" strokeWidth={2} />
                   </button>
-                </div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.7, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 180,
+                    damping: 22,
+                    delay: 0.18,
+                  }}
+                  className="relative shrink-0"
+                  style={{ height: "220px" }}
+                >
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-12 rounded-full bg-blue-500/20 blur-2xl" />
+                  <div
+                    className="absolute inset-0 opacity-10"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(rgba(100,180,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(100,180,255,0.3) 1px, transparent 1px)",
+                      backgroundSize: "28px 28px",
+                    }}
+                  />
+                  <div className="absolute inset-0 w-full h-full flex items-center justify-center">
+                    <ErrorBoundary>
+                      <XiaoD mode={robotMode} />
+                    </ErrorBoundary>
+                  </div>
+
+                  <motion.div
+                    key={robotMode}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white/8 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10"
+                  >
+                    <motion.div
+                      animate={{ opacity: [1, 0.3, 1] }}
+                      transition={{ duration: 1.5, repeat: Infinity }}
+                      className="w-1.5 h-1.5 rounded-full bg-blue-400"
+                    />
+                    <span className="text-blue-200 text-[12px] font-medium">
+                      {robotMode === "idle"
+                        ? "等待中"
+                        : robotMode === "thinking"
+                          ? "思考中..."
+                          : robotMode === "talking"
+                            ? "回复中..."
+                            : "已准备好"}
+                    </span>
+                  </motion.div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.35 }}
+                  className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0"
+                  style={{ scrollbarWidth: "none" }}
+                >
+                  {messages.length === 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.45 }}
+                      className="text-center py-4"
+                    >
+                      <p className="text-blue-200/70 text-[14px] mb-4">
+                        嗨！告诉我你现在想吃什么 👋
+                      </p>
+                      <div className="flex flex-wrap gap-2 justify-center">
+                        {["🌶️ 来点辣的", "💰 实惠的", "🥗 清淡健康"].map(
+                          (sample) => (
+                            <button
+                              key={sample}
+                              onClick={() => {
+                                setAiInput(sample.slice(3));
+                                inputRef.current?.focus();
+                              }}
+                              className="bg-white/10 hover:bg-white/18 text-blue-100 text-[13px] font-medium px-3.5 py-1.5 rounded-full transition-colors border border-white/15 backdrop-blur-sm"
+                            >
+                              {sample}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    </motion.div>
+                  ) : (
+                    messages.map((message, index) => {
+                      const isLast = index === messages.length - 1;
+                      const showRecommendations =
+                        isLast &&
+                        message.role === "ai" &&
+                        recommendations.length > 0;
+
+                      return (
+                        <div
+                          key={`${message.role}-${index}`}
+                          className="space-y-4"
+                        >
+                          {showRecommendations && (
+                            <motion.div
+                              initial="hidden"
+                              animate="show"
+                              variants={{
+                                hidden: { opacity: 0 },
+                                show: {
+                                  opacity: 1,
+                                  transition: {
+                                    staggerChildren: 0.08,
+                                    delayChildren: 0.1,
+                                  },
+                                },
+                              }}
+                              className="space-y-2 pt-2"
+                            >
+                              <motion.div
+                                variants={{
+                                  hidden: { opacity: 0, x: -5 },
+                                  show: { opacity: 1, x: 0 },
+                                }}
+                                className="text-[12px] uppercase tracking-widest text-blue-200/60 ml-1"
+                              >
+                                为你精选
+                              </motion.div>
+                              {recommendations.map(
+                                ({ item, matched_reasons }) => {
+                                  const fullItem =
+                                    menus.find((m) => m.id === item.id) || item;
+                                  return (
+                                    <motion.button
+                                      key={item.id}
+                                      variants={{
+                                        hidden: {
+                                          opacity: 0,
+                                          y: 12,
+                                          scale: 0.96,
+                                        },
+                                        show: {
+                                          opacity: 1,
+                                          y: 0,
+                                          scale: 1,
+                                          transition: {
+                                            type: "spring",
+                                            stiffness: 300,
+                                            damping: 22,
+                                          },
+                                        },
+                                      }}
+                                      whileHover={{
+                                        scale: 1.02,
+                                        backgroundColor:
+                                          "rgba(255, 255, 255, 0.15)",
+                                      }}
+                                      whileTap={{ scale: 0.98 }}
+                                      onClick={() => {
+                                        onPickItem(fullItem);
+                                        setIsAiOpen(false);
+                                      }}
+                                      style={{
+                                        willChange: "transform, opacity",
+                                      }}
+                                      className="w-full text-left bg-white/10 border border-white/10 rounded-2xl px-4 py-3 transition-colors shadow-lg"
+                                    >
+                                      <div className="flex items-center justify-between gap-3 mb-1">
+                                        <span className="text-white font-medium line-clamp-1">
+                                          {item.title}
+                                        </span>
+                                        <span className="text-blue-200 text-sm">
+                                          ¥{item.price.toFixed(1)}
+                                        </span>
+                                      </div>
+                                      <div className="text-blue-100/70 text-[12px] line-clamp-1">
+                                        {item.location_text} · {item.shop_text}
+                                      </div>
+                                      <div className="text-blue-100/70 text-[12px] mt-1 line-clamp-1">
+                                        {matched_reasons.length
+                                          ? matched_reasons.join(" / ")
+                                          : item.badge}
+                                      </div>
+                                    </motion.button>
+                                  );
+                                },
+                              )}
+                            </motion.div>
+                          )}
+                          <motion.div
+                            initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 300,
+                              damping: 24,
+                            }}
+                            className={`flex ${message.role === "user" ? "justify-end" : "justify-start gap-2"}`}
+                          >
+                            {message.role === "ai" && (
+                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 shrink-0 flex items-center justify-center text-white font-black text-[10px] shadow-md mt-0.5">
+                                D
+                              </div>
+                            )}
+                            <div
+                              className={cn(
+                                "max-w-[78%] text-[13.5px] leading-relaxed px-3.5 py-2.5 rounded-2xl",
+                                message.role === "user"
+                                  ? "bg-blue-500 text-white rounded-br-sm shadow-md"
+                                  : "bg-white/12 text-blue-50 rounded-bl-sm border border-white/10",
+                              )}
+                            >
+                              {message.text}
+                            </div>
+                          </motion.div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    delay: 0.4,
+                    type: "spring",
+                    stiffness: 260,
+                    damping: 24,
+                  }}
+                  className="px-4 pb-5 pt-2 shrink-0"
+                >
+                  <div className="flex gap-2 bg-white/10 backdrop-blur-md rounded-2xl p-1.5 border border-white/15">
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={aiInput}
+                      onChange={(event) => setAiInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          void sendMessage();
+                        }
+                      }}
+                      placeholder="说说你想吃什么..."
+                      className="flex-1 bg-transparent border-none outline-none text-[14px] text-white placeholder-white/40 px-2"
+                    />
+                    <button
+                      onClick={() => void sendMessage()}
+                      disabled={!aiInput.trim() || isThinking}
+                      className="disabled:opacity-30 bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-xl text-[13px] font-semibold transition-all active:scale-90 flex items-center gap-1.5"
+                    >
+                      {isThinking ? (
+                        <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5" strokeWidth={2} />
+                      )}
+                      发送
+                    </button>
+                  </div>
+                </motion.div>
               </motion.div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </>
-  );
-});
+            </>
+          )}
+        </AnimatePresence>
+      </>
+    );
+  },
+);
 
 export default function App() {
   const [menuCache, setMenuCache] = useState<MenuItem[]>([]);
@@ -2276,7 +2330,8 @@ export default function App() {
   }, []);
 
   const getSessionHeaders = () => {
-    const sid = window.localStorage.getItem("xd-food-session-id") || "anonymous";
+    const sid =
+      window.localStorage.getItem("xd-food-session-id") || "anonymous";
     return {
       "Content-Type": "application/json",
       "X-Session-ID": sid,
@@ -2290,7 +2345,7 @@ export default function App() {
         if (!sid) return;
 
         const response = await fetch("/api/favorites", {
-          headers: { "X-Session-ID": sid }
+          headers: { "X-Session-ID": sid },
         });
         const data = await response.json();
         if (data.success && Array.isArray(data.data)) {
@@ -2301,7 +2356,9 @@ export default function App() {
           if (saved) {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed)) {
-              setFavorites(parsed.filter((v): v is string => typeof v === "string"));
+              setFavorites(
+                parsed.filter((v): v is string => typeof v === "string"),
+              );
             }
           }
         }
@@ -2314,7 +2371,7 @@ export default function App() {
 
   useEffect(() => {
     window.localStorage.setItem("xd-food-favorites", JSON.stringify(favorites));
-    
+
     // Sync to backend
     const timeoutId = setTimeout(async () => {
       const sid = window.localStorage.getItem("xd-food-session-id");
@@ -2330,7 +2387,7 @@ export default function App() {
         console.error("Failed to save favorites to backend:", error);
       }
     }, 1000); // Debounce
-    
+
     return () => clearTimeout(timeoutId);
   }, [favorites]);
 
@@ -2407,7 +2464,7 @@ export default function App() {
         const filteredItems = filterItems(
           sourceItems,
           deferredSearchQuery,
-          filters
+          filters,
         );
         const renderCount = discoverPage * DISCOVER_PAGE_SIZE;
 
@@ -2667,27 +2724,32 @@ export default function App() {
     };
   }, [currentView, hasMoreDiscover, isLoading, isLoadingMore]);
 
-  const openDetail = useCallback(async (id: string) => {
-    const cachedItem = menuCache.find((item) => item.id === id) || null;
+  const openDetail = useCallback(
+    async (id: string) => {
+      const cachedItem = menuCache.find((item) => item.id === id) || null;
 
-    setExpandedItem(null);
-    if (cachedItem) {
-      setSelectedItem(cachedItem);
-    }
-
-    try {
-      const response = await fetchJson<MenuDetailResponse>(`/api/menus/${id}`);
-      setSelectedItem(response.data.item);
-      setMenuCache((previous) => mergeMenus(previous, [response.data.item]));
-      setErrorMessage(null);
-    } catch (error) {
-      if (!cachedItem) {
-        setErrorMessage(
-          error instanceof Error ? error.message : "加载详情失败",
-        );
+      setExpandedItem(null);
+      if (cachedItem) {
+        setSelectedItem(cachedItem);
       }
-    }
-  }, [menuCache]);
+
+      try {
+        const response = await fetchJson<MenuDetailResponse>(
+          `/api/menus/${id}`,
+        );
+        setSelectedItem(response.data.item);
+        setMenuCache((previous) => mergeMenus(previous, [response.data.item]));
+        setErrorMessage(null);
+      } catch (error) {
+        if (!cachedItem) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "加载详情失败",
+          );
+        }
+      }
+    },
+    [menuCache],
+  );
 
   const displayedData =
     currentView === "discover" ? discoverItems : favoriteItems;
@@ -2760,32 +2822,37 @@ export default function App() {
                           initial="initial"
                           animate="animate"
                           exit="exit"
-                          transition={{
-                            ...ANIM_VARIANTS.fadeInUp.transition,
-                            delay: index < (typeof DISCOVER_PAGE_SIZE === 'number' ? DISCOVER_PAGE_SIZE : 20) ? index * 0.03 : 0,
-                            ease: "easeOut",
-                          } as any}
+                          transition={
+                            {
+                              ...ANIM_VARIANTS.fadeInUp.transition,
+                              delay:
+                                index <
+                                (typeof DISCOVER_PAGE_SIZE === "number"
+                                  ? DISCOVER_PAGE_SIZE
+                                  : 20)
+                                  ? index * 0.03
+                                  : 0,
+                              ease: "easeOut",
+                            } as any
+                          }
                         >
-                           <FoodCard
-                             item={item}
-                             onClick={openDetail}
-                           />
-                         </motion.div>
-                       ))}
-                     </div>
-                   )}
-                   {!errorMessage && !isLoading && displayedData.length > 0 && (
-                     <div className="flex flex-col items-center gap-4 pt-10 pb-[max(env(safe-area-inset-bottom),40px)]">
-                       {hasMoreDiscover ? (
-                         <button
-                           onClick={() =>
-                             setDiscoverPage((previous) => previous + 1)
-                           }
-                           disabled={isLoadingMore}
-                           className="px-6 py-3 rounded-full bg-white border border-stone-200 text-stone-700 shadow-sm md:hover:bg-stone-50 active:bg-stone-100 transition-colors disabled:opacity-60 active:scale-95"
-                         >
-                           {isLoadingMore ? "加载中..." : "加载更多菜品"}
-                         </button>
+                          <FoodCard item={item} onClick={openDetail} />
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                  {!errorMessage && !isLoading && displayedData.length > 0 && (
+                    <div className="flex flex-col items-center gap-4 pt-10 pb-[max(env(safe-area-inset-bottom),40px)]">
+                      {hasMoreDiscover ? (
+                        <button
+                          onClick={() =>
+                            setDiscoverPage((previous) => previous + 1)
+                          }
+                          disabled={isLoadingMore}
+                          className="px-6 py-3 rounded-full bg-white border border-stone-200 text-stone-700 shadow-sm md:hover:bg-stone-50 active:bg-stone-100 transition-colors disabled:opacity-60 active:scale-95"
+                        >
+                          {isLoadingMore ? "加载中..." : "加载更多菜品"}
+                        </button>
                       ) : (
                         <p className="text-sm text-stone-400">
                           这一轮推荐已经看完了
@@ -2842,10 +2909,7 @@ export default function App() {
                         exit={{ opacity: 0, scale: 0.9 }}
                         transition={{ duration: 0.3, type: "spring" }}
                       >
-                        <FoodCard
-                          item={item}
-                          onClick={openDetail}
-                        />
+                        <FoodCard item={item} onClick={openDetail} />
                       </motion.div>
                     ))}
                   </div>
