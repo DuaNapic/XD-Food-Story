@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { loadMenuData } from "./_lib/menuData.js";
 
 function parsePositiveInt(value, fallback) {
   const number = Number.parseInt(String(value ?? ""), 10);
@@ -12,6 +11,86 @@ function includesIgnoreCase(source, target) {
     .includes(String(target || "").toLowerCase());
 }
 
+function parseBooleanParam(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());
+}
+
+function normalizeSeed(value) {
+  const seed = String(value || "").trim();
+  return seed || "default-seed";
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function shuffleMenus(items, seed) {
+  return [...items].sort((left, right) => {
+    const leftHash = hashString(`${seed}:${left.id}`);
+    const rightHash = hashString(`${seed}:${right.id}`);
+
+    if (leftHash === rightHash) {
+      return left.id.localeCompare(right.id, "zh-CN");
+    }
+
+    return leftHash - rightHash;
+  });
+}
+
+function diversifyByShop(items) {
+  const buckets = new Map();
+
+  items.forEach((item) => {
+    if (!buckets.has(item.shop_text)) {
+      buckets.set(item.shop_text, []);
+    }
+
+    buckets.get(item.shop_text).push(item);
+  });
+
+  const orderedShops = [...buckets.keys()];
+  const diversified = [];
+
+  while (orderedShops.length > 0) {
+    const nextRound = [];
+
+    orderedShops.forEach((shop) => {
+      const bucket = buckets.get(shop);
+      if (!bucket?.length) {
+        return;
+      }
+
+      diversified.push(bucket.shift());
+
+      if (bucket.length > 0) {
+        nextRound.push(shop);
+      }
+    });
+
+    orderedShops.splice(0, orderedShops.length, ...nextRound);
+  }
+
+  return diversified;
+}
+
+function sortMenus(items, sortBy, options = {}) {
+  const { seed = "default-seed", diversifyShop = false } = options;
+  let sorted = [...items];
+
+  if (sortBy === "random") {
+    sorted = shuffleMenus(sorted, seed);
+  }
+
+  return diversifyShop ? diversifyByShop(sorted) : sorted;
+}
+
 export default function handler(req, res) {
   // 允许跨域
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -22,36 +101,14 @@ export default function handler(req, res) {
   }
 
   try {
-    // 绝对路径定位：强制去项目根目录下的 api 文件夹里找 data.json
-    // 使用 process.cwd() 配合 vercel.json 的 includeFiles
-    const filePath = path.join(process.cwd(), "api", "data.json");
-    if (!fs.existsSync(filePath)) {
-      // 容灾处理：尝试从原本的 server 目录找
-      const fallbackPath = path.join(
-        process.cwd(),
-        "server",
-        "data",
-        "recommended_menus_frontend_ui.json",
-      );
-      if (fs.existsSync(fallbackPath)) {
-        const fileData = fs.readFileSync(fallbackPath, "utf8");
-        return res
-          .status(200)
-          .json({ success: true, data: JSON.parse(fileData) });
-      }
-      throw new Error("File not found at " + filePath);
-    }
-
-    const fileData = fs.readFileSync(filePath, "utf8");
-    const jsonData = JSON.parse(fileData);
-
-    if (!Array.isArray(jsonData)) {
-      throw new Error("Menu data must be an array");
-    }
+    const jsonData = loadMenuData();
 
     const page = parsePositiveInt(req.query?.page, 1);
     const pageSize = Math.min(parsePositiveInt(req.query?.page_size, 20), 100);
     const keyword = String(req.query?.keyword || "").trim();
+    const sortBy = String(req.query?.sort_by || "default").trim();
+    const seed = normalizeSeed(req.query?.seed);
+    const diversifyShop = parseBooleanParam(req.query?.diversify_shop);
 
     let filtered = jsonData;
     if (keyword) {
@@ -65,6 +122,8 @@ export default function handler(req, res) {
         ].some((field) => includesIgnoreCase(field, keyword)),
       );
     }
+
+    filtered = sortMenus(filtered, sortBy, { seed, diversifyShop });
 
     const total = filtered.length;
     const totalPages = Math.max(Math.ceil(total / pageSize), 1);
@@ -87,8 +146,11 @@ export default function handler(req, res) {
   } catch (error) {
     console.error("读取 JSON 失败:", error);
     res.status(500).json({
-      error: "找不到菜单数据，请检查 data.json 是否在 api 文件夹内",
-      details: error.message,
+      success: false,
+      error: {
+        message: "找不到菜单数据，请检查 data.json 是否在 api 文件夹内",
+        details: error.message,
+      },
     });
   }
 }
