@@ -1,11 +1,15 @@
 {
   "version": 2,
   "functions": {
-    "api/*.js": {
-      "includeFiles": "api/data.json"
+    "api/**/*.js": {
+      "includeFiles": "{api/data.json,server/data/recommended_menus_frontend_ui.json}"
     }
   },
   "rewrites": [
+    {
+      "source": "/api/menus/([^/]+)",
+      "destination": "/api/menu-detail.js?id=$1"
+    },
     {
       "source": "/api/(.*)",
       "destination": "/api/$1.js"

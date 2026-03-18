@@ -1,11 +1,19 @@
 import { unifiedRecommendStream } from "../server/services/unifiedRecommender.js";
 
 export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const { query, conversation_history = [] } = req.body;
+  const { query, conversation_history = [] } = req.body || {};
 
   if (!query) {
     return res.status(400).json({ error: "Query is required" });
@@ -27,7 +35,9 @@ export default async function handler(req, res) {
     res.end();
   } catch (error) {
     console.error("[api/recommend] Stream error:", error);
-    res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`,
+    );
     res.end();
   }
 }
