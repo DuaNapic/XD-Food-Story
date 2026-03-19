@@ -79,6 +79,8 @@ function XiaoDCharacter({ mode }: { mode: RobotMode }) {
       eye.scale.x = THREE.MathUtils.lerp(eye.scale.x, sx, lp);
       eye.scale.y = THREE.MathUtils.lerp(eye.scale.y, sy, lp);
       eye.position.y = THREE.MathUtils.lerp(eye.position.y, ty, lp);
+      eye.position.x = 0;       // 保证重置复原
+      eye.rotation.z = 0;       // 保证重置复原
       
       const mat = eye.material as THREE.MeshStandardMaterial;
       mat.color.set(ledColor);
@@ -127,20 +129,38 @@ function XiaoDCharacter({ mode }: { mode: RobotMode }) {
           {/* ── 白色科技頭球 ── */}
           <mesh>
             <sphereGeometry args={[R, 56, 56]} />
-            <meshStandardMaterial color="#edf5ff" roughness={0.18} metalness={0.1} />
+            <meshStandardMaterial color="#edf5ff" roughness={0.25} metalness={0.05} />
           </mesh>
+
+          {/* ── 顶部彩虹指示灯 ── */}
+          <group position={[0, R - 0.01, 0]}>
+            <mesh position={[-0.035, 0, 0]}>
+              <sphereGeometry args={[0.04, 16, 16]} />
+              <meshStandardMaterial color="#ff4d4d" emissive="#ff4d4d" emissiveIntensity={0.8} />
+            </mesh>
+            <mesh position={[0, 0, 0]}>
+              <sphereGeometry args={[0.04, 16, 16]} />
+              <meshStandardMaterial color="#4dff4d" emissive="#4dff4d" emissiveIntensity={0.8} />
+            </mesh>
+            <mesh position={[0.035, 0, 0]}>
+              <sphereGeometry args={[0.04, 16, 16]} />
+              <meshStandardMaterial color="#4d4dff" emissive="#4d4dff" emissiveIntensity={0.8} />
+            </mesh>
+          </group>
+
+          {/* ── 胸部预留空位 ── */}
 
           {/* ── 屏幕組件（對齊正前方）── */}
           <group rotation={[0, Math.PI / 2, 0]} position={[0, 0.03, 0]}>
-            {/* 屏幕主體 */}
+            {/* 弧面玻璃屏幕主体 */}
             <mesh>
-              <sphereGeometry args={[R * 1.025, 48, 48, -0.62, 1.24, 1.15, 0.85]} />
-              <meshStandardMaterial color="#050d1a" roughness={0.95} metalness={0} />
+              <sphereGeometry args={[R * 1.03, 32, 32, -0.7, 1.4, 1.1, 1.0]} />
+              <meshStandardMaterial color="#050d1a" roughness={0.1} metalness={0.5} />
             </mesh>
-            {/* 屏幕邊框 */}
+            {/* 发光霓虹边框 */}
             <mesh>
-              <sphereGeometry args={[R * 1.021, 48, 48, -0.66, 1.32, 1.1, 0.95]} />
-              <meshStandardMaterial color="#2a7ab8" emissive="#1a5088" emissiveIntensity={0.7} roughness={0.15} metalness={0.4} />
+              <sphereGeometry args={[R * 1.026, 48, 48, -0.74, 1.48, 1.05, 1.1]} />
+              <meshStandardMaterial color="#2a7ab8" emissive="#1a5088" emissiveIntensity={1.8} roughness={0.15} metalness={0.4} />
             </mesh>
 
             {/* ── 眼睛（白色矩形風格，但使用球面防止穿模）── */}
@@ -161,39 +181,75 @@ function XiaoDCharacter({ mode }: { mode: RobotMode }) {
             </group>
           </group>
 
-          {/* 天線 */}
-          {[ -0.58, 0.58 ].map((x, i) => (
+          {/* 复杂实心全包罩耳式耳机与天线 */}
+          {[ -0.6, 0.6 ].map((x, i) => {
+            const sign = Math.sign(x);
+            return (
             <group key={i} position={[x, 0.18, 0]} rotation={[-0.26, 0, 0]}>
-              <mesh position={[0, 0.04, 0]}>
-                <cylinderGeometry args={[0.038, 0.045, 0.08, 10]} />
-                <meshStandardMaterial color="#7ab8e0" roughness={0.15} metalness={0.85} />
+              {/* 1. 柔软质感的深色耳机垫圈 (变薄以避免外凸) */}
+              <mesh rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.22, 0.22, 0.04, 32]} />
+                <meshStandardMaterial color="#2d3748" roughness={0.9} />
               </mesh>
-              <mesh position={[0, 0.32, 0]}>
-                <cylinderGeometry args={[0.022, 0.028, 0.50, 10]} />
-                <meshStandardMaterial color="#c0dff8" roughness={0.1} metalness={0.9} />
+              {/* 2. 金属质感耳机外壳结构 (半球经 Y 轴压缩变扁平，增大视觉面积而不凸出) */}
+              <mesh rotation={[0, 0, sign * -Math.PI / 2]} position={[sign * 0.01, 0, 0]} scale={[1, 0.35, 1]}>
+                <sphereGeometry args={[0.22, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+                <meshStandardMaterial color="#e2e8f0" roughness={0.15} metalness={0.8} />
               </mesh>
-              <mesh position={[0, 0.60, 0]}>
-                <sphereGeometry args={[0.048, 16, 16]} />
-                <meshStandardMaterial color="#38beff" emissive="#38beff" emissiveIntensity={2} />
+              {/* 3. 科技蓝色发光环嵌在外壳表面 (紧贴压缩后的壳体) */}
+              <mesh rotation={[0, 0, Math.PI / 2]} position={[sign * 0.05, 0, 0]}>
+                <torusGeometry args={[0.12, 0.015, 16, 32]} />
+                <meshStandardMaterial color="#00d8ff" emissive="#00d8ff" emissiveIntensity={1.5} />
+              </mesh>
+              {/* 4. 天线支撑轴 */}
+              <mesh position={[0, 0.15, 0]}>
+                <cylinderGeometry args={[0.015, 0.025, 0.1, 12]} />
+                <meshStandardMaterial color="#4a5568" roughness={0.5} metalness={0.8} />
+              </mesh>
+              {/* 5. 细长天线 */}
+              <mesh position={[0, 0.35, 0]}>
+                <cylinderGeometry args={[0.01, 0.015, 0.35, 8]} />
+                <meshStandardMaterial color="#cbd5e0" roughness={0.2} metalness={0.9} />
+              </mesh>
+              {/* 6. 蓝色天线光球 */}
+              <mesh position={[0, 0.52, 0]}>
+                <sphereGeometry args={[0.03, 16, 16]} />
+                <meshStandardMaterial color={currentLedColor} emissive={currentLedColor} emissiveIntensity={2} />
               </mesh>
             </group>
-          ))}
-          {/* 四肢與關節（移動到 headRef 內部以保持動作一致） */}
+          )})}
+          {/* 四肢与关节 */}
           <mesh ref={armL} position={[-0.58, -0.22, 0.08]}>
             <capsuleGeometry args={[0.11, 0.22, 6, 14]} />
-            <meshStandardMaterial color="#c5e2f5" roughness={0.2} metalness={0.1} />
+            <meshStandardMaterial color="#c5e2f5" roughness={0.25} metalness={0.05} />
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.115, 0.115, 0.025, 32]} />
+              <meshStandardMaterial color="#00aaff" roughness={0.2} metalness={0.5} emissive="#0033aa" emissiveIntensity={0.8} />
+            </mesh>
           </mesh>
           <mesh ref={armR} position={[0.58, -0.22, 0.08]}>
             <capsuleGeometry args={[0.11, 0.22, 6, 14]} />
-            <meshStandardMaterial color="#c5e2f5" roughness={0.2} metalness={0.1} />
+            <meshStandardMaterial color="#c5e2f5" roughness={0.25} metalness={0.05} />
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.115, 0.115, 0.025, 32]} />
+              <meshStandardMaterial color="#00aaff" roughness={0.2} metalness={0.5} emissive="#0033aa" emissiveIntensity={0.8} />
+            </mesh>
           </mesh>
           <mesh ref={legL} position={[-0.28, -0.62, 0]}>
             <capsuleGeometry args={[0.10, 0.18, 6, 14]} />
-            <meshStandardMaterial color="#c5e2f5" roughness={0.2} metalness={0.1} />
+            <meshStandardMaterial color="#c5e2f5" roughness={0.25} metalness={0.05} />
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.105, 0.105, 0.025, 32]} />
+              <meshStandardMaterial color="#00aaff" roughness={0.2} metalness={0.5} emissive="#0033aa" emissiveIntensity={0.8} />
+            </mesh>
           </mesh>
           <mesh ref={legR} position={[0.28, -0.62, 0]}>
             <capsuleGeometry args={[0.10, 0.18, 6, 14]} />
-            <meshStandardMaterial color="#c5e2f5" roughness={0.2} metalness={0.1} />
+            <meshStandardMaterial color="#c5e2f5" roughness={0.25} metalness={0.05} />
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.105, 0.105, 0.025, 32]} />
+              <meshStandardMaterial color="#00aaff" roughness={0.2} metalness={0.5} emissive="#0033aa" emissiveIntensity={0.8} />
+            </mesh>
           </mesh>
         </group>
       </Float>
@@ -201,7 +257,7 @@ function XiaoDCharacter({ mode }: { mode: RobotMode }) {
   );
 }
 
-const XiaoD = ({ mode = 'idle', className = '' }: { mode?: RobotMode, className?: string }) => (
+const XiaoD = ({ mode = 'idle', className = '' }: { mode?: RobotMode; className?: string }) => (
   <div className={`relative w-full h-full ${className}`}>
     <div className="absolute inset-0 w-full h-full">
       <Canvas camera={{ position: [0, 0, 2.8], fov: 52 }} dpr={[1, 2]}>

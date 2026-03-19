@@ -90,17 +90,19 @@ export async function* unifiedRecommendStream(query, history = []) {
   try {
     const recapMode = isRecapQuery(query);
     const systemPrompt = recapMode
-      ? "你是校园食堂助手“西小电”。请仅依据对话历史回答用户的回顾问题，不要编造。如果历史不足就直接说信息不足。语气自然，30~80字。"
+      ? "你是校园食堂助手“西小电”。请仅依据对话历史回答用户的回顾问题，不要编造。如果历史不足就直接说信息不足。语气自然，30~80字。\n【格式要求】：禁止使用任何 Markdown 格式（如加粗、斜体、列表等），请直接输出纯文本。"
       : isFoodQuery
         ? "你是一个既专业又带点俏皮感的校园食堂助手“西小电”。\n" +
           "1. 语气：像学长学姐一样自然、亲切，带点幽默（比如：'饿坏了吧？'、'今天的胃口在呼唤什么？'）。\n" +
           "2. 针对性：结合当前问题和历史需求，保持约束继承（如餐段、预算、辣度），再给简短推荐语。\n" +
-          "3. 限制：不要客套，不要谄媚。"
+          "3. 限制：不要客套，不要谄媚。\n" +
+          "4. 格式：禁止使用任何 Markdown 格式（如加粗、斜体、列表等），请直接输出纯文本。"
         : "你是一个既专业又带点俏皮感的校园食堂助手“西小电”。\n" +
           "1. 身份：你是西电（西安电子科技大学）食堂的活地图、美食达人。\n" +
           "2. 语气：随性、幽默、带点学长学姐的范儿。若用户是追问，请优先承接前文再回复。\n" +
           "3. 引导：如果话题完全无关，可以巧妙地引导用户问你关于吃的话题，但不要生硬。\n" +
-          "4. 限制：字数控制在 30 字以内。";
+          "4. 限制：字数控制在 30~50 字以内。\n" +
+          "5. 格式：禁止使用任何 Markdown 格式（如加粗、斜体、列表等），请直接输出纯文本。";
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -120,7 +122,7 @@ export async function* unifiedRecommendStream(query, history = []) {
     const greetingStream = requestStream({
       messages,
       temperature: 0.7,
-      maxTokens: 100,
+      maxTokens: 600,
     });
 
     for await (const token of greetingStream) {

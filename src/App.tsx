@@ -21,7 +21,6 @@ import {
   XAxis,
 } from "recharts";
 import {
-  ChefHat,
   Clock,
   Droplets,
   Flame,
@@ -33,6 +32,8 @@ import {
   MapPin,
   Search,
   Sparkles,
+  Soup,
+  Store,
   Utensils,
   Wheat,
   X,
@@ -42,9 +43,12 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { cn } from "./lib/utils";
 
 const favoritesAtom = atom<string[]>([]);
-const viewAtom = atom<"discover" | "favorites">("discover");
+const viewAtom = atom<"discover" | "favorites" | "shops">("discover");
 const searchQueryAtom = atom<string>("");
 const isAiModeAtom = atom<boolean>(false);
+
+type ShopGroup = { name: string; canteen: string; items: MenuItem[]; images: string[] };
+const selectedShopAtom = atom<ShopGroup | null>(null);
 
 // MASTER-CLASS: Centralized Animation Variants
 const ANIM_VARIANTS = {
@@ -69,16 +73,18 @@ const ANIM_VARIANTS = {
 
 type FilterState = {
   canteen: string;
-  maxPrice: number | null;
+  priceRange: string | null;
   maxCalories: number | null;
   minHealth: number | null;
 };
 const filtersAtom = atom<FilterState>({
   canteen: "all",
-  maxPrice: null,
+  priceRange: null,
   maxCalories: null,
   minHealth: null,
 });
+
+const shopCanteenFiltersAtom = atom<string[]>([]);
 
 const FILTER_OPTIONS = {
   canteens: [
@@ -89,9 +95,10 @@ const FILTER_OPTIONS = {
   ],
   prices: [
     { id: null, label: "不限" },
-    { id: 10, label: "≤10元" },
-    { id: 15, label: "≤15元" },
-    { id: 25, label: "≤25元" },
+    { id: "0-10", label: "0-10元" },
+    { id: "10-15", label: "10-15元" },
+    { id: "15-25", label: "15-25元" },
+    { id: "25-999", label: "25元以上" },
   ],
   calories: [
     { id: null, label: "不限热量" },
@@ -410,9 +417,12 @@ function filterItems(items: MenuItem[], keyword: string, filters: FilterState) {
   }
 
   // Price filter
-  if (filters.maxPrice !== null) {
+  if (filters.priceRange !== null) {
+    const [minStr, maxStr] = filters.priceRange.split('-');
+    const min = Number(minStr);
+    const max = Number(maxStr);
     filtered = filtered.filter(
-      (item) => item.price <= (filters.maxPrice ?? 999),
+      (item) => item.price >= min && item.price <= max,
     );
   }
 
@@ -468,9 +478,10 @@ const Sidebar = React.memo(() => {
     <>
       <aside className="hidden md:flex flex-col fixed top-0 left-0 h-screen w-20 lg:w-64 bg-white/70 backdrop-blur-xl border-r border-stone-100 z-40 transition-all duration-300">
         <div className="h-20 flex items-center justify-center lg:justify-start lg:px-8 border-b border-stone-100">
-          <ChefHat
-            className="w-7 h-7 text-stone-800 flex-shrink-0"
-            strokeWidth={1.5}
+          <img
+            src="/logo.png"
+            alt="XD Food Story Logo"
+            className="w-8 h-8 lg:w-9 lg:h-9 object-contain flex-shrink-0"
           />
           <span className="ml-3 font-semibold text-lg tracking-tight text-stone-800 hidden lg:block font-serif">
             XD Foodie
@@ -531,6 +542,21 @@ const Sidebar = React.memo(() => {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setView("shops")}
+            className={cn(
+              "flex items-center justify-center lg:justify-start lg:px-4 py-3.5 rounded-2xl transition-all duration-300",
+              currentView === "shops"
+                ? "bg-stone-800 text-white shadow-lg shadow-stone-800/10"
+                : "text-stone-500 hover:bg-stone-100 hover:text-stone-800",
+            )}
+          >
+            <Store
+              className="w-5 h-5 flex-shrink-0"
+              strokeWidth={currentView === "shops" ? 2 : 1.5}
+            />
+            <span className="ml-3 font-medium hidden lg:block">店铺/窗口</span>
+          </button>
         </nav>
       </aside>
       <div className="md:hidden fixed bottom-0 inset-x-0 z-40 px-6 pb-[max(env(safe-area-inset-bottom),24px)] pointer-events-none">
@@ -561,7 +587,7 @@ const Sidebar = React.memo(() => {
               className={cn(
                 "w-6 h-6",
                 currentView === "favorites"
-                  ? "text-rose-400 fill-rose-400"
+                  ? "text-rose-500 fill-rose-500"
                   : "text-stone-400",
               )}
               strokeWidth={currentView === "favorites" ? 2 : 1.5}
@@ -572,6 +598,21 @@ const Sidebar = React.memo(() => {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setView("shops")}
+            className={cn(
+              "p-4 rounded-full transition-colors relative flex-1 flex justify-center",
+              currentView === "shops" ? "bg-white/10" : "hover:bg-white/5",
+            )}
+          >
+            <Store
+              className={cn(
+                "w-6 h-6",
+                currentView === "shops" ? "text-white" : "text-stone-400",
+              )}
+              strokeWidth={currentView === "shops" ? 2 : 1.5}
+            />
+          </button>
         </div>
       </div>
     </>
@@ -580,6 +621,7 @@ const Sidebar = React.memo(() => {
 
 const FilterSection = React.memo(() => {
   const [filters, setFilters] = useAtom(filtersAtom);
+  const [currentView] = useAtom(viewAtom);
 
   const filterGroups = [
     {
@@ -589,7 +631,7 @@ const FilterSection = React.memo(() => {
     },
     {
       label: "价格",
-      key: "maxPrice" as const,
+      key: "priceRange" as const,
       options: FILTER_OPTIONS.prices,
     },
     {
@@ -604,21 +646,31 @@ const FilterSection = React.memo(() => {
     },
   ];
 
+  const activeGroups = currentView === "shops"
+    ? filterGroups.filter((g) => g.key !== "canteen")
+    : filterGroups;
+
+  /* ── 手机端：整体折叠为单行横向滚动芯片条；桌面端保持竖排分组 ── */
+
   return (
-    <div className="max-w-4xl mx-auto px-4 mb-10">
-      <div className="flex flex-col gap-5 p-6 bg-white/95 backdrop-blur-md md:backdrop-blur-2xl md:bg-white/50 rounded-[32px] border border-stone-200/40 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-500 md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.04)]">
-        {filterGroups.map((group) => (
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 mb-4 sm:mb-8">
+      {/* ── 统一竖排分组，移动端仅通过 class 收紧 ── */}
+      <div className="flex flex-col gap-2 sm:gap-4 p-3 sm:p-5 bg-white/95 backdrop-blur-md md:backdrop-blur-2xl md:bg-white/50 rounded-[20px] sm:rounded-[32px] border border-stone-200/40 shadow-[0_4px_16px_rgb(0,0,0,0.03)] sm:shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-500 md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.04)]">
+        {activeGroups.map((group) => (
           <div
             key={group.label}
-            className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6"
+            className="flex flex-row items-center gap-2 sm:gap-6"
           >
-            <div className="flex items-center gap-2 min-w-[64px]">
-              <div className="w-1 h-3.5 bg-orange-400/40 rounded-full" />
-              <span className="text-[12px] font-bold text-stone-400 uppercase tracking-[0.1em]">
+            <div className="flex items-center gap-1.5 shrink-0 w-[36px] sm:w-[64px]">
+              <div className="w-1 h-3 sm:h-3.5 bg-orange-400/40 rounded-full" />
+              <span className="text-[10px] sm:text-[12px] font-bold text-stone-400 uppercase tracking-[0.08em]">
                 {group.label}
               </span>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div
+              className="flex flex-nowrap sm:flex-wrap gap-1.5 sm:gap-2 overflow-x-auto sm:overflow-visible"
+              style={{ scrollbarWidth: "none" }}
+            >
               {group.options.map((option) => {
                 const isActive = filters[group.key] === option.id;
                 return (
@@ -627,23 +679,19 @@ const FilterSection = React.memo(() => {
                     onClick={() =>
                       setFilters({ ...filters, [group.key]: option.id })
                     }
-                    className={cn(
-                      "group relative px-4 py-1.5 rounded-full text-[13.5px] font-medium transition-all duration-300 active:scale-95",
+                  className={cn(
+                      "group relative shrink-0 px-2.5 py-0.5 sm:px-4 sm:py-1.5 rounded-full text-[11.5px] sm:text-[13.5px] font-medium transition-all duration-300 active:scale-95",
                       isActive
                         ? "bg-stone-800 text-white shadow-md shadow-stone-800/15"
-                        : "bg-white/40 text-stone-500 border border-stone-100/50 md:hover:bg-stone-100 md:hover:text-stone-800 md:hover:border-stone-200 active:bg-stone-50 active:scale-95",
+                        : "bg-white/40 text-stone-500 border border-stone-100/50 hover:bg-stone-100 hover:text-stone-800 hover:border-stone-200",
                     )}
                   >
                     {option.label}
                     {isActive && (
                       <motion.div
-                        layoutId={`active-pill-${group.label}`}
+                        layoutId={`active-pill-desktop-${group.label}`}
                         className="absolute inset-0 rounded-full ring-2 ring-stone-800/10 pointer-events-none"
-                        transition={{
-                          type: "spring",
-                          bounce: 0.2,
-                          duration: 0.6,
-                        }}
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                       />
                     )}
                   </button>
@@ -719,7 +767,7 @@ const Hero = React.memo(({ menuCount }: { menuCount: number }) => {
       </motion.div>
 
       <div className="relative inline-block mb-6">
-        <h1 className="text-5xl md:text-6xl font-serif font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-stone-800 to-stone-400 pb-2 relative z-10">
+        <h1 className="text-5xl md:text-6xl font-serif font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-[#1A365D] to-stone-500 pb-2 relative z-10">
           XD食物语
         </h1>
         <motion.div
@@ -729,9 +777,13 @@ const Hero = React.memo(({ menuCount }: { menuCount: number }) => {
             opacity: { delay: 0.3, duration: 0.8 },
             rotate: { duration: 6, repeat: Infinity, ease: "easeInOut" },
           }}
-          className="absolute -top-6 -right-5 md:-top-7 md:-right-6 text-orange-400/80 drop-shadow-sm z-20"
+          className="absolute -top-10 -right-8 md:-top-12 md:-right-10 z-20"
         >
-          <ChefHat className="w-8 h-8 md:w-10 md:h-10" strokeWidth={1.5} />
+          <img
+            src="/logo.png"
+            alt="Logo Icon"
+            className="w-12 h-12 md:w-16 md:h-16 object-contain drop-shadow-md"
+          />
         </motion.div>
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-[3px] bg-gradient-to-r from-transparent via-stone-200 to-transparent rounded-full" />
       </div>
@@ -1674,18 +1726,18 @@ const AIMagicIsland = React.memo(
               style={{ willChange: "transform, opacity" }}
               className="pointer-events-auto group relative"
             >
-              {/* Aura Glow Effect */}
+              {/* Aura Glow Effect - Optimized for Performance */}
               <motion.div
                 animate={{
                   opacity: [0.3, 0.6, 0.3],
-                  scale: [1, 1.05, 1],
                 }}
                 transition={{
                   duration: 4,
                   repeat: Infinity,
                   ease: "easeInOut",
                 }}
-                className="absolute -inset-2 bg-gradient-to-r from-blue-400/20 via-sky-400/20 to-indigo-400/20 rounded-[32px] blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ willChange: "opacity" }}
+                className="absolute -inset-2 bg-gradient-to-r from-orange-400/20 via-amber-400/20 to-rose-400/20 rounded-[32px] blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
               />
 
               <button
@@ -1694,9 +1746,14 @@ const AIMagicIsland = React.memo(
               >
                 <div className="relative">
                   <XiaoDIcon size={36} />
-                  <div className="absolute -top-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+                  <img
+                    src="/logo.png"
+                    alt=""
+                    className="absolute -top-3 -right-2 w-6 h-6 object-contain -rotate-12 drop-shadow-sm"
+                  />
+                  <div className="absolute top-0 -right-4 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
                   </div>
                 </div>
 
@@ -1709,9 +1766,9 @@ const AIMagicIsland = React.memo(
                   </span>
                 </div>
 
-                <div className="ml-2 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                <div className="ml-2 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center group-hover:bg-orange-50 transition-colors">
                   <Sparkles
-                    className="w-4 h-4 text-stone-400 group-hover:text-blue-500 transition-colors"
+                    className="w-4 h-4 text-stone-400 group-hover:text-orange-500 transition-colors"
                     strokeWidth={2.5}
                   />
                 </div>
@@ -1736,15 +1793,24 @@ const XiaoDFloatingChat = React.memo(
     const [aiInput, setAiInput] = useState("");
     const [isThinking, setIsThinking] = useState(false);
     const [messages, setMessages] = useState<
-      Array<{ role: "user" | "ai"; text: string }>
+      Array<{ role: "user" | "ai"; text: string; items?: RankedMenuItem[] }>
     >([]);
-    const [recommendations, setRecommendations] = useState<RankedMenuItem[]>(
-      [],
-    );
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const [isTalking, setIsTalking] = useState(false);
+    const [isJustReplied, setIsJustReplied] = useState(false);
+    const prevTalkingRef = useRef(false);
+
+    // isTalking false => true => false 过渡时触发表情
+    useEffect(() => {
+      if (prevTalkingRef.current && !isTalking && messages.length > 0) {
+        setIsJustReplied(true);
+        const t = setTimeout(() => setIsJustReplied(false), 2600);
+        return () => clearTimeout(t);
+      }
+      prevTalkingRef.current = isTalking;
+    }, [isTalking, messages.length]);
 
     const robotMode: RobotMode = isThinking
       ? "thinking"
@@ -1763,7 +1829,6 @@ const XiaoDFloatingChat = React.memo(
       const conversationHistory = [...messages.slice(-6)];
 
       setAiInput("");
-      setRecommendations([]);
       setMessages((previous) => [...previous, { role: "user", text: query }]);
       setIsThinking(true);
       setTimeout(
@@ -1826,17 +1891,20 @@ const XiaoDFloatingChat = React.memo(
                   });
                   chatEndRef.current?.scrollIntoView({ behavior: "auto" });
                 } else if (chunk.type === "final") {
-                  setRecommendations(chunk.data.items);
-                  if (chunk.data.reply_text) {
-                    setMessages((prev) => {
-                      const updated = [...prev];
-                      const last = updated[updated.length - 1];
-                      if (last && last.role === "ai") {
-                        last.text = chunk.data.reply_text;
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const lastIndex = updated.length - 1;
+                    if (lastIndex >= 0 && updated[lastIndex].role === "ai") {
+                      updated[lastIndex] = {
+                        ...updated[lastIndex],
+                        items: chunk.data.items,
+                      };
+                      if (chunk.data.reply_text) {
+                        updated[lastIndex].text = chunk.data.reply_text;
                       }
-                      return updated;
-                    });
-                  }
+                    }
+                    return updated;
+                  });
                 } else if (chunk.type === "error") {
                   throw new Error(chunk.message);
                 }
@@ -1894,8 +1962,8 @@ const XiaoDFloatingChat = React.memo(
                 className="fixed inset-0 z-40"
                 style={{
                   background:
-                    "radial-gradient(ellipse at bottom right, rgba(30,60,120,0.35) 0%, rgba(0,0,0,0.45) 100%)",
-                  backdropFilter: "blur(8px)",
+                    "radial-gradient(ellipse at bottom right, rgba(200,100,50,0.15) 0%, rgba(0,0,0,0.25) 100%)",
+                  backdropFilter: "blur(4px)",
                 }}
               />
 
@@ -1934,9 +2002,9 @@ const XiaoDFloatingChat = React.memo(
                   maxHeight:
                     "calc(100vh - env(safe-area-inset-bottom, 12px) - 110px)",
                   background:
-                    "linear-gradient(160deg, #0d1b2e 0%, #0a2240 40%, #0e1f38 100%)",
+                    "linear-gradient(160deg, #fdfbf7 0%, #fffaf0 40%, #fefcfb 100%)",
                   boxShadow:
-                    "0 32px 80px rgba(0,30,80,0.6), 0 0 0 1px rgba(80,160,255,0.15) inset",
+                    "0 32px 80px rgba(0,10,20,0.15), 0 0 0 1px rgba(200,100,50,0.05) inset",
                   willChange: "transform, opacity",
                 }}
               >
@@ -1947,18 +2015,19 @@ const XiaoDFloatingChat = React.memo(
                   className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0"
                 >
                   <div>
-                    <p className="text-white font-bold text-[16px] tracking-wide">
+                    <p className="text-stone-800 font-bold text-[16px] tracking-wide flex items-center gap-1.5">
+                      <img src="/logo.png" alt="" className="w-5 h-5 object-contain" />
                       西小电
                     </p>
-                    <p className="text-blue-300/80 text-[12px]">
-                      西电美食 AI 助手
+                    <p className="text-stone-500 text-[12px] pl-6">
+                      你的赛博大厨
                     </p>
                   </div>
                   <button
                     onClick={() => setIsAiOpen(false)}
-                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                    className="w-8 h-8 rounded-full bg-stone-200/50 hover:bg-stone-200 flex items-center justify-center transition-colors"
                   >
-                    <X className="w-4 h-4 text-white/70" strokeWidth={2} />
+                    <X className="w-4 h-4 text-stone-500" strokeWidth={2} />
                   </button>
                 </motion.div>
 
@@ -1974,18 +2043,18 @@ const XiaoDFloatingChat = React.memo(
                   className="relative shrink-0"
                   style={{ height: "220px" }}
                 >
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-12 rounded-full bg-blue-500/20 blur-2xl" />
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-12 rounded-full bg-orange-400/20 blur-2xl" />
                   <div
-                    className="absolute inset-0 opacity-10"
+                    className="absolute inset-0 opacity-[0.15]"
                     style={{
                       backgroundImage:
-                        "linear-gradient(rgba(100,180,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(100,180,255,0.3) 1px, transparent 1px)",
+                        "linear-gradient(rgba(240,150,50,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(240,150,50,0.5) 1px, transparent 1px)",
                       backgroundSize: "28px 28px",
                     }}
                   />
                   <div className="absolute inset-0 w-full h-full flex items-center justify-center">
                     <ErrorBoundary>
-                      <XiaoD mode={robotMode} />
+                      <XiaoD mode={robotMode} showSmile={isJustReplied} />
                     </ErrorBoundary>
                   </div>
 
@@ -1993,14 +2062,14 @@ const XiaoDFloatingChat = React.memo(
                     key={robotMode}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white/8 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10"
+                    className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white/60 backdrop-blur-sm px-3 py-1 rounded-full border border-stone-200/50 shadow-sm"
                   >
                     <motion.div
                       animate={{ opacity: [1, 0.3, 1] }}
                       transition={{ duration: 1.5, repeat: Infinity }}
-                      className="w-1.5 h-1.5 rounded-full bg-blue-400"
+                      className="w-1.5 h-1.5 rounded-full bg-orange-400"
                     />
-                    <span className="text-blue-200 text-[12px] font-medium">
+                    <span className="text-stone-600 text-[12px] font-medium">
                       {robotMode === "idle"
                         ? "等待中"
                         : robotMode === "thinking"
@@ -2026,7 +2095,7 @@ const XiaoDFloatingChat = React.memo(
                       transition={{ delay: 0.45 }}
                       className="text-center py-4"
                     >
-                      <p className="text-blue-200/70 text-[14px] mb-4">
+                      <p className="text-stone-500 text-[14px] mb-4 font-medium">
                         嗨！告诉我你现在想吃什么 👋
                       </p>
                       <div className="flex flex-wrap gap-2 justify-center">
@@ -2038,7 +2107,7 @@ const XiaoDFloatingChat = React.memo(
                                 setAiInput(sample.slice(3));
                                 inputRef.current?.focus();
                               }}
-                              className="bg-white/10 hover:bg-white/18 text-blue-100 text-[13px] font-medium px-3.5 py-1.5 rounded-full transition-colors border border-white/15 backdrop-blur-sm"
+                              className="bg-orange-50 hover:bg-orange-100 text-orange-700 text-[13px] font-medium px-3.5 py-1.5 rounded-full transition-colors border border-orange-200/60 shadow-sm"
                             >
                               {sample}
                             </button>
@@ -2048,11 +2117,10 @@ const XiaoDFloatingChat = React.memo(
                     </motion.div>
                   ) : (
                     messages.map((message, index) => {
-                      const isLast = index === messages.length - 1;
                       const showRecommendations =
-                        isLast &&
                         message.role === "ai" &&
-                        recommendations.length > 0;
+                        message.items &&
+                        message.items.length > 0;
 
                       return (
                         <div
@@ -2080,11 +2148,11 @@ const XiaoDFloatingChat = React.memo(
                                   hidden: { opacity: 0, x: -5 },
                                   show: { opacity: 1, x: 0 },
                                 }}
-                                className="text-[12px] uppercase tracking-widest text-blue-200/60 ml-1"
+                                className="text-[12px] uppercase tracking-widest text-orange-600/60 ml-1 font-bold"
                               >
                                 为你精选
                               </motion.div>
-                              {recommendations.map(
+                              {message.items!.map(
                                 ({ item, matched_reasons }) => {
                                   const fullItem =
                                     menus.find((m) => m.id === item.id) || item;
@@ -2111,7 +2179,7 @@ const XiaoDFloatingChat = React.memo(
                                       whileHover={{
                                         scale: 1.02,
                                         backgroundColor:
-                                          "rgba(255, 255, 255, 0.15)",
+                                          "#fffcf5",
                                       }}
                                       whileTap={{ scale: 0.98 }}
                                       onClick={() => {
@@ -2121,20 +2189,20 @@ const XiaoDFloatingChat = React.memo(
                                       style={{
                                         willChange: "transform, opacity",
                                       }}
-                                      className="w-full text-left bg-white/10 border border-white/10 rounded-2xl px-4 py-3 transition-colors shadow-lg"
+                                      className="w-full text-left bg-white border border-orange-100/60 rounded-2xl px-4 py-3 transition-colors shadow-sm shadow-orange-900/5 hover:border-orange-200/80 hover:shadow-md"
                                     >
                                       <div className="flex items-center justify-between gap-3 mb-1">
-                                        <span className="text-white font-medium line-clamp-1">
+                                        <span className="text-stone-800 font-bold line-clamp-1">
                                           {item.title}
                                         </span>
-                                        <span className="text-blue-200 text-sm">
+                                        <span className="text-orange-600 font-black text-sm">
                                           ¥{item.price.toFixed(1)}
                                         </span>
                                       </div>
-                                      <div className="text-blue-100/70 text-[12px] line-clamp-1">
+                                      <div className="text-stone-500 text-[12px] line-clamp-1">
                                         {item.location_text} · {item.shop_text}
                                       </div>
-                                      <div className="text-blue-100/70 text-[12px] mt-1 line-clamp-1">
+                                      <div className="text-stone-500 text-[12px] mt-1 line-clamp-1">
                                         {matched_reasons.length
                                           ? matched_reasons.join(" / ")
                                           : item.badge}
@@ -2156,16 +2224,16 @@ const XiaoDFloatingChat = React.memo(
                             className={`flex ${message.role === "user" ? "justify-end" : "justify-start gap-2"}`}
                           >
                             {message.role === "ai" && (
-                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 shrink-0 flex items-center justify-center text-white font-black text-[10px] shadow-md mt-0.5">
-                                D
+                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 shrink-0 flex items-center justify-center shadow-md mt-0.5">
+                                <Soup className="w-4 h-4 text-white" strokeWidth={2.5} />
                               </div>
                             )}
                             <div
                               className={cn(
                                 "max-w-[78%] text-[13.5px] leading-relaxed px-3.5 py-2.5 rounded-2xl",
                                 message.role === "user"
-                                  ? "bg-blue-500 text-white rounded-br-sm shadow-md"
-                                  : "bg-white/12 text-blue-50 rounded-bl-sm border border-white/10",
+                                  ? "bg-orange-500 text-white rounded-br-sm shadow-md"
+                                  : "bg-white text-stone-700 rounded-bl-sm border border-orange-100/60 shadow-sm",
                               )}
                             >
                               {message.text}
@@ -2189,7 +2257,7 @@ const XiaoDFloatingChat = React.memo(
                   }}
                   className="px-4 pb-5 pt-2 shrink-0"
                 >
-                  <div className="flex gap-2 bg-white/10 backdrop-blur-md rounded-2xl p-1.5 border border-white/15">
+                  <div className="flex gap-2 bg-white/90 backdrop-blur-md rounded-2xl p-1.5 border border-stone-200/60 shadow-sm">
                     <input
                       ref={inputRef}
                       type="text"
@@ -2201,17 +2269,17 @@ const XiaoDFloatingChat = React.memo(
                         }
                       }}
                       placeholder="说说你想吃什么..."
-                      className="flex-1 bg-transparent border-none outline-none text-[14px] text-white placeholder-white/40 px-2"
+                      className="flex-1 bg-transparent border-none outline-none text-[14px] text-stone-800 placeholder-stone-400 px-2"
                     />
                     <button
                       onClick={() => void sendMessage()}
                       disabled={!aiInput.trim() || isThinking}
-                      className="disabled:opacity-30 bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-xl text-[13px] font-semibold transition-all active:scale-90 flex items-center gap-1.5"
+                      className="disabled:opacity-30 bg-orange-500 hover:bg-orange-400 text-white px-4 py-2 rounded-xl text-[13px] font-semibold transition-all active:scale-90 flex items-center gap-1.5 shadow-sm shadow-orange-500/20"
                     >
                       {isThinking ? (
                         <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        <Sparkles className="w-3.5 h-3.5" strokeWidth={2} />
+                        <Flame className="w-4 h-4" strokeWidth={2.5} />
                       )}
                       发送
                     </button>
@@ -2244,10 +2312,46 @@ export default function App() {
   const [hasMoreDiscover, setHasMoreDiscover] = useState(true);
 
   const [currentView] = useAtom(viewAtom);
+  const [selectedShop, setSelectedShop] = useAtom(selectedShopAtom);
   const [favorites, setFavorites] = useAtom(favoritesAtom);
   const [searchQuery] = useAtom(searchQueryAtom);
   const [isAiMode] = useAtom(isAiModeAtom);
   const [filters] = useAtom(filtersAtom);
+  const [shopCanteenFilters, setShopCanteenFilters] = useAtom(shopCanteenFiltersAtom);
+
+  const shopsData = useMemo(() => {
+    const map = new Map<string, ShopGroup>();
+    fullMenuCatalog.forEach((item) => {
+      const key = `${item.location_text}-${item.shop_text}`;
+      if (!map.has(key)) {
+        map.set(key, { name: item.shop_text, canteen: item.location_text, items: [], images: [] });
+      }
+      const group = map.get(key)!;
+      group.items.push(item);
+      if (group.images.length < 3 && item.image_key) {
+        group.images.push(getImageUrl(item.image_key));
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+  }, [fullMenuCatalog]);
+
+  const filteredShops = useMemo(() => {
+    if (shopCanteenFilters.length === 0) return shopsData;
+    return shopsData.filter(shop =>
+      shopCanteenFilters.some(f => shop.canteen.includes(f))
+    );
+  }, [shopsData, shopCanteenFilters]);
+
+  useEffect(() => {
+    if (currentView !== "shops") {
+      setSelectedShop(null);
+    }
+  }, [currentView, setSelectedShop]);
+
+  const filteredShopItems = useMemo(() => {
+    if (!selectedShop) return [];
+    return filterItems(selectedShop.items, "", filters);
+  }, [selectedShop, filters]);
 
   const discoverSeedRef = useRef(generateSessionSeed());
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -2267,7 +2371,7 @@ export default function App() {
   const isSearchMode =
     Boolean(deferredSearchQuery) ||
     filters.canteen !== "all" ||
-    filters.maxPrice !== null ||
+    filters.priceRange !== null ||
     filters.maxCalories !== null ||
     filters.minHealth !== null;
 
@@ -2434,7 +2538,7 @@ export default function App() {
   }, [
     deferredSearchQuery,
     filters.canteen,
-    filters.maxPrice,
+    filters.priceRange,
     filters.maxCalories,
     filters.minHealth,
   ]);
@@ -2751,8 +2855,12 @@ export default function App() {
     [menuCache],
   );
 
-  const displayedData =
-    currentView === "discover" ? discoverItems : favoriteItems;
+  const filteredFavoriteItems = useMemo(() => {
+    return filterItems(favoriteItems, "", filters);
+  }, [favoriteItems, filters]);
+
+  const itemsToRender =
+    currentView === "discover" ? discoverItems : filteredFavoriteItems;
   const visibleCountText = isSearchMode
     ? `匹配 ${discoverTotal} 条`
     : `已展示 ${discoverItems.length} / ${discoverTotal || catalogCount} 条`;
@@ -2766,6 +2874,8 @@ export default function App() {
         <Sidebar />
         <main className="flex-1 lg:ml-64 md:ml-20 pb-32 transition-all duration-300 relative z-10">
           <AnimatePresence mode="wait">
+            {/* Remove the misplaced global FilterSection */}
+
             {currentView === "discover" ? (
               <motion.div
                 key="discover"
@@ -2811,11 +2921,11 @@ export default function App() {
                     <EmptyState text={errorMessage} />
                   ) : isLoading ? (
                     <LoadingState />
-                  ) : displayedData.length === 0 ? (
+                  ) : itemsToRender.length === 0 ? (
                     <EmptyState text="未找到匹配的美食，换个关键词试试？" />
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">
-                      {displayedData.map((item, index) => (
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 xl:gap-8">
+                      {itemsToRender.map((item, index) => (
                         <motion.div
                           key={item.id}
                           variants={ANIM_VARIANTS.fadeInUp}
@@ -2841,7 +2951,7 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  {!errorMessage && !isLoading && displayedData.length > 0 && (
+                  {!errorMessage && !isLoading && itemsToRender.length > 0 && (
                     <div className="flex flex-col items-center gap-4 pt-10 pb-[max(env(safe-area-inset-bottom),40px)]">
                       {hasMoreDiscover ? (
                         <button
@@ -2863,7 +2973,7 @@ export default function App() {
                   )}
                 </motion.section>
               </motion.div>
-            ) : (
+            ) : currentView === "favorites" ? (
               <motion.div
                 key="favorites"
                 initial={{ opacity: 0, y: 10 }}
@@ -2883,7 +2993,10 @@ export default function App() {
                     Your curated collection of campus flavors.
                   </p>
                 </div>
-                {favoriteItems.length === 0 ? (
+                
+                <FilterSection />
+
+                {itemsToRender.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-32 text-center bg-stone-50/50 rounded-[40px] border border-stone-100 border-dashed">
                     <div className="w-24 h-24 bg-white rounded-full shadow-sm flex items-center justify-center mb-6">
                       <HeartCrack
@@ -2899,8 +3012,8 @@ export default function App() {
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 xl:gap-8">
-                    {favoriteItems.map((item) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 xl:gap-8">
+                    {itemsToRender.map((item) => (
                       <motion.div
                         key={item.id}
                         layout
@@ -2915,7 +3028,147 @@ export default function App() {
                   </div>
                 )}
               </motion.div>
-            )}
+            ) : currentView === "shops" ? (
+              <motion.div
+                key="shops"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="pt-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32"
+              >
+                {!selectedShop ? (
+                  <>
+                    <div className="mb-10">
+                      <h1 className="text-4xl font-serif font-bold text-stone-800 tracking-tight">
+                        店铺 / 窗口
+                      </h1>
+                      
+                      <div className="flex flex-wrap items-center gap-2 mt-6">
+                        {FILTER_OPTIONS.canteens.filter(c => c.id !== "all").map(c => {
+                          const isActive = shopCanteenFilters.includes(c.id as string);
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => {
+                                setShopCanteenFilters(prev => 
+                                  isActive ? prev.filter(v => v !== c.id) : [...prev, c.id as string]
+                                );
+                              }}
+                              className={cn(
+                                "px-4 py-1.5 rounded-full text-[13px] font-semibold transition-all duration-300 border active:scale-95",
+                                isActive 
+                                  ? "bg-orange-500 text-white border-orange-600 shadow-md shadow-orange-500/20" 
+                                  : "bg-white text-stone-500 border-stone-200 hover:border-stone-300 hover:bg-stone-50"
+                              )}
+                            >
+                              {c.label}
+                            </button>
+                          );
+                        })}
+                        {shopCanteenFilters.length > 0 && (
+                          <button
+                            onClick={() => setShopCanteenFilters([])}
+                            className="ml-2 text-[12px] text-stone-400 hover:text-orange-500 transition-colors font-medium border-b border-dashed border-stone-300 hover:border-orange-300"
+                          >
+                            重置全部
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="text-stone-400 mt-6 text-sm font-medium tracking-wide">
+                        已为您筛选出 {filteredShops.length} 家精选美味窗口
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
+                      {filteredShops.map((shop) => (
+                        <motion.button
+                          key={`${shop.canteen}-${shop.name}`}
+                          whileHover={{ y: -4, boxShadow: "0 20px 40px rgba(0,0,0,0.06)" }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => setSelectedShop(shop)}
+                          className="flex flex-col text-left bg-white rounded-[24px] p-6 border border-stone-200/60 shadow-sm transition-all group overflow-hidden relative"
+                        >
+                          <div className="flex justify-between items-start mb-6 z-10 w-full">
+                            <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-500 group-hover:bg-orange-500 group-hover:text-white transition-colors">
+                              <Store className="w-6 h-6" strokeWidth={2} />
+                            </div>
+                            <span className="px-3 py-1 bg-stone-100 text-stone-600 rounded-full text-[11px] font-bold uppercase tracking-wider tabular-nums">
+                              {shop.items.length} 款菜品
+                            </span>
+                          </div>
+                          <div className="z-10 relative">
+                            <h3 className="text-xl font-bold text-stone-800 mb-2 group-hover:text-orange-600 transition-colors">
+                              {shop.name}
+                            </h3>
+                            <div className="flex items-center gap-1.5 text-stone-500 text-[13px] font-medium">
+                              <MapPin className="w-3.5 h-3.5 opacity-70" />
+                              {shop.canteen}
+                            </div>
+                          </div>
+                          
+                          {/* Aesthetic Visual Hint via CSS instead of heavy images */}
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-100/40 to-rose-50/10 rounded-bl-full translate-x-8 -translate-y-8 opacity-0 group-hover:opacity-100 transition-all duration-500" />
+                        </motion.button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="relative">
+                    <button
+                      onClick={() => setSelectedShop(null)}
+                      className="group flex items-center gap-2 text-stone-500 hover:text-stone-800 transition-colors mb-8"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-stone-100 group-hover:bg-stone-200 flex items-center justify-center transition-colors">
+                        <X className="w-4 h-4" />
+                      </div>
+                      <span className="font-medium text-sm">返回导览页</span>
+                    </button>
+                    
+                    <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-stone-100">
+                      <div>
+                        <div className="flex items-center gap-2 text-orange-600 font-bold text-[13px] tracking-widest mb-3 uppercase">
+                          <Store className="w-4 h-4" />
+                          {selectedShop.canteen}
+                        </div>
+                        <h1 className="text-4xl md:text-5xl font-serif font-black text-stone-800 tracking-tight">
+                          {selectedShop.name}
+                        </h1>
+                      </div>
+                      
+                      {selectedShop.images.length > 0 && (
+                        <div className="flex items-center justify-end -space-x-4 opacity-90">
+                          {selectedShop.images.map((img, i) => (
+                            <div key={i} className="w-16 h-16 rounded-full border-4 border-[#FDFDFD] shadow-sm overflow-hidden bg-stone-100 relative z-10 hover:z-20 transition-all hover:scale-105">
+                              <img src={img} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <FilterSection />
+
+                    {filteredShopItems.length === 0 ? (
+                      <EmptyState text="这家店里没有找到符合筛选条件的菜品哦" />
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 xl:gap-8">
+                        {filteredShopItems.map((item) => (
+                          <motion.div
+                            key={item.id}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            <FoodCard item={item} onClick={openDetail} />
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            ) : null}
           </AnimatePresence>
         </main>
 
@@ -2937,6 +3190,13 @@ export default function App() {
           menus={menuCache}
           onPickItem={(item) => void openDetail(item.id)}
         />
+
+        {/* ── 3D Preloader: 预热三维上下文，防止开启对话时冷启动卡顿 ── */}
+        <div className="sr-only p-0 m-0 w-0 h-0 overflow-hidden pointer-events-none opacity-0 invisible" aria-hidden="true">
+          <ErrorBoundary>
+            <XiaoD mode="idle" />
+          </ErrorBoundary>
+        </div>
       </div>
     </MotionConfig>
   );

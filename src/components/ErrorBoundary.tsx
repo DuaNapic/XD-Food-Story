@@ -27,7 +27,7 @@ class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="w-full h-full flex flex-col items-center justify-center bg-blue-950/20 backdrop-blur-md rounded-2xl border border-white/5 p-6 text-center space-y-4">
           <div className="relative">
-             <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full" />
+             <div className="absolute inset-0 bg-orange-500/20 blur-xl rounded-full" />
              <Bot className="w-16 h-16 text-blue-400/80 relative z-10" strokeWidth={1.5} />
           </div>
           <div className="space-y-1">
@@ -36,7 +36,7 @@ class ErrorBoundary extends Component<Props, State> {
           </div>
           <button 
             onClick={() => this.setState({ hasError: false })}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-sm rounded-full transition-all border border-blue-500/30"
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 text-sm rounded-full transition-all border border-orange-500/30"
           >
             <RefreshCcw className="w-3.5 h-3.5" />
             嘗試喚醒
