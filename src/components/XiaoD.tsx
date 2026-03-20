@@ -276,21 +276,28 @@ const XiaoDFallback = () => (
   </div>
 );
 
-const XiaoD = ({ mode = 'idle', className = '' }: { mode?: RobotMode; className?: string }) => (
-  <div className={`relative w-full h-full ${className}`}>
-    <div className="absolute inset-0 w-full h-full">
-      <Canvas camera={{ position: [0, 0, 2.8], fov: 52 }} dpr={[1, 2]}>
-        <Suspense fallback={null}>
-          <ambientLight intensity={1.3} color="#f0f8ff" />
-          <directionalLight position={[2, 4, 5]} intensity={1.8} color="#ffffff" />
-          <Environment preset="city" />
-          <XiaoDCharacter mode={mode} />
-        </Suspense>
-      </Canvas>
+const XiaoD = ({ mode = 'idle', className = '' }: { mode?: RobotMode; className?: string }) => {
+  const [ready, setReady] = useState(false);
+
+  return (
+    <div className={`relative w-full h-full ${className}`}>
+      <div className="absolute inset-0 w-full h-full">
+        <Canvas
+          camera={{ position: [0, 0, 2.8], fov: 52 }}
+          dpr={[1, 2]}
+          onCreated={() => setReady(true)}
+        >
+          <Suspense fallback={null}>
+            <ambientLight intensity={1.3} color="#f0f8ff" />
+            <directionalLight position={[2, 4, 5]} intensity={1.8} color="#ffffff" />
+            <Environment preset="city" />
+            <XiaoDCharacter mode={mode} />
+          </Suspense>
+        </Canvas>
+      </div>
+      {!ready && <XiaoDFallback />}
     </div>
-    {/* HTML-layer fallback visible while Canvas/Suspense loads */}
-    <XiaoDFallback />
-  </div>
-);
+  );
+};
 
 export default XiaoD;
