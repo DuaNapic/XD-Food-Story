@@ -852,10 +852,11 @@ const Hero = React.memo(({ menuCount }: { menuCount: number }) => {
 });
 
 const FoodCard = React.memo(
-  ({ item, onClick }: { item: MenuItem; onClick: (id: string) => void }) => {
+  ({ item, onClick, priority = false }: { item: MenuItem; onClick: (id: string) => void; priority?: boolean }) => {
     const [favorites, setFavorites] = useAtom(favoritesAtom);
     const isFavorite = favorites.includes(item.id);
     const satietyLabel = getSatietyLabel(item);
+    const [imgLoaded, setImgLoaded] = useState(false);
 
     const toggleFavorite = (event: React.MouseEvent) => {
       event.stopPropagation();
@@ -884,15 +885,21 @@ const FoodCard = React.memo(
         style={{ willChange: "transform, opacity" }}
         className="bg-white/95 md:bg-white/90 backdrop-blur-md md:backdrop-blur-xl rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)] md:hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] cursor-pointer flex flex-col group relative ring-1 ring-stone-900/5 md:hover:ring-stone-900/10 transition-all duration-300 active:scale-[0.98]"
       >
-        <div className="relative h-48 sm:h-56 overflow-hidden">
+        <div className="relative h-48 sm:h-56 overflow-hidden bg-stone-100">
+          {/* Skeleton shimmer */}
+          {!imgLoaded && (
+            <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-stone-100 via-stone-200 to-stone-100 bg-[length:200%_100%]" style={{ animation: "shimmer 1.5s ease-in-out infinite" }} />
+          )}
           <motion.img
             src={getImageUrl(item.image_key)}
             alt={item.title}
-            loading="lazy"
+            loading={priority ? "eager" : "lazy"}
             decoding="async"
+            onLoad={() => setImgLoaded(true)}
             whileHover={{ scale: 1.05 }}
             transition={{ duration: 0.7, ease: [0.33, 1, 0.68, 1] }}
-            className="w-full h-full object-cover origin-center"
+            className="w-full h-full object-cover origin-center transition-opacity duration-500"
+            style={{ opacity: imgLoaded ? 1 : 0 }}
           />
           <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full text-[13px] font-medium text-stone-700 shadow-sm flex items-center gap-1.5 z-10">
             <Utensils className="w-3.5 h-3.5 text-orange-500" strokeWidth={2} />
@@ -932,6 +939,7 @@ const FoodCard = React.memo(
     );
   },
 );
+
 
 const DetailDrawer = React.memo(
   ({
@@ -2946,7 +2954,7 @@ export default function App() {
                             } as any
                           }
                         >
-                          <FoodCard item={item} onClick={openDetail} />
+                          <FoodCard item={item} onClick={openDetail} priority={index < 4} />
                         </motion.div>
                       ))}
                     </div>
